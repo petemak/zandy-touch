@@ -1,0 +1,61 @@
+# --- Clojure / Leiningen / tools.deps ---
+target/
+lein-*.jar
+.lein-*
+.lein-env
+.lein-repl-history
+.lein-failures
+.nrepl-port
+.cpcache/
+.shadow-cljs/
+classes/
+checkouts/
+pom.xml
+pom.xml.asc
+*.jar
+*.class
+
+# ClojureScript / shadow-cljs build output
+out/
+node_modules/
+.shadow-cljs/
+resources/public/js/compiled/
+public/js/
+package-lock.json
+.clj-kondo/
+.lsp/
+
+# --- Editors / REPL tooling ---
+.calva/
+.portal/
+.rebel_readline_history
+*.iml
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# --- Claude Code ---
+.claude/settings.local.json
+.claude/projects/
+
+# --- Environment / secrets ---
+.env
+.env.*
+*.pem
+*.key
+
+# --- Kigali Keys backend runtime ---
+*.db
+*.db-journal
+/media/
+# seeder output when MEDIA_DIR is mispointed at the source photo tree
+/assets/property-photos/gallery/
+/assets/property-photos/map/
+
+# Local Netlify folder
+.netlify
+
+# --- Emacs files ---
+\#*#

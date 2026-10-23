@@ -1,0 +1,16 @@
+;; Direct dependencies the project may use.
+;; Coordinates are from memory: check each library's README and
+;; correct this file before relying on it.
+#{org.clojure/clojure
+  org.clojure/clojurescript
+  thheller/shadow-cljs
+  no.cjohansen/replicant
+  no.cjohansen/portfolio
+  integrant/integrant
+  aero/aero
+  io.pedestal/pedestal.service
+  io.pedestal/pedestal.jetty
+  metosin/reitit
+  metosin/reitit-pedestal
+  metosin/malli
+  com.datomic/peer} ; or whichever Datomic artifact you choose
