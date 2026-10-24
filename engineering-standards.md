@@ -39,7 +39,7 @@ When building application on the Clojure technology stack follow these recommend
 - Configuration Files: Store environment-specific configuration externally using 
   structured EDN files or environment variables
 - Schema Validation: Validate configuration maps and incoming/outgoing data payloads 
-  at the boundary using a library Mali.
+  at the boundary using Malli.
 
 ## Libraries, tools and frameworks
 When building Clojure and ClojureScript applications, use the following libraries:
@@ -50,14 +50,14 @@ When building Clojure and ClojureScript applications, use the following librarie
 - `Integrant` (https://github.com/weavejester/integrant) - for component management
 - `Aero` (https://github.com/juxt/aero) - for application for configuration
 - `Datomic`(https://docs.datomic.com/datomic-overview.html) - as database management system
-- `Mali` (https://github.com/metosin/malli) - for schema validation
+- `Malli` (https://github.com/metosin/malli) - for schema validation
 - `Cognitect test-runner` (https://github.com/cognitect-labs/test-runner) -  for discovering and running tests
 - `babashka` (https://babashka.org) - great tool to write scripts in Clojure
 
 ## Technology restrictions
 - Frontend: ClojureScript, Replicant, Portfolio, shadow-cljs
 - Backend: Clojure, Integrant, Aero, Pedestal, Reitit, Malli,
-  Pedestal, Datomic
+  Datomic
 - Not allowed: Reagent, re-frame, Rum, Compojure, ring-jetty,
   Mount, environ, Plumatic Schema, SQL databases for application data
 - The libraries named above are required: use each one for its

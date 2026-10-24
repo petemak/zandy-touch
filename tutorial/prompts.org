@@ -1,6 +1,6 @@
 
 * Prompts
-** 1. Brant Strategist
+** 1. Brand strategist to architect (design)
 Use the brand-strategist subagent to build a brand brief.
 Then use the ux-designer subagent to turn that brief into a
 design spec and API contract. Then use the visual-designer

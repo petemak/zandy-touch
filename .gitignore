@@ -22,7 +22,7 @@ node_modules/
 resources/public/js/compiled/
 public/js/
 # package-lock.json
-# .clj-kondo/
+.clj-kondo/.cache/
 .lsp/
 
 # --- Editors / REPL tooling ---
@@ -46,7 +46,7 @@ public/js/
 *.pem
 *.key
 
-# --- Kigali Keys backend runtime ---
+# --- Backend runtime ---
 *.db
 *.db-journal
 /media/
