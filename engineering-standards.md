@@ -1,8 +1,25 @@
 ## Goals
 - Simplest architecture that satisfies everything below — one
-  service, one database, until something here demands more
+  backend service, one frontend server, one database, until
+  something here demands more
 - Maintainable by a single developer
 - Accessible to WCAG 2.1 AA
+
+## Deployment topology
+- Frontend and backend run as separate servers so they can be
+  cached and scaled independently. Most traffic is read-only
+  browsing, which the frontend serves and a CDN caches; writes to
+  Datomic (orders, catalogue edits) need far less scaling.
+- The frontend server renders public pages on the server (SSR)
+  from the same Replicant views the browser uses, so SEO tags are
+  in the first HTML response. It gets data only through the
+  backend's HTTP API, never directly from Datomic.
+- Both servers must be stateless enough to run more than one
+  instance; anything shared (sessions, rate limits, idempotency
+  keys) lives in the backend's database, not in process memory.
+- Datomic with its built-in dev storage plus off-site backups is
+  accepted for launch; a different storage can come later.
+- Total hosting stays within 15 USD per month.
 
 ## Architectural boundaries
 - Business logic never lives only in the frontend — the server
@@ -45,7 +62,9 @@ When building application on the Clojure technology stack follow these recommend
 When building Clojure and ClojureScript applications, use the following libraries:
 - `Replicant` (https://github.com/cjohansen/replicant) - rendering library for Clojure/ClojureScript
 - `Pedestal` (https://github.com/pedestal/pedestal) - backend for basic services, APIs and applications
-- `Reitit` (https://github.com/metosin/reitit) - for HTTP routing
+- `Reitit` (https://github.com/metosin/reitit) - for HTTP routing.
+  If Reitit does not work with the current Pedestal version, use
+  Pedestal's own router on the backend instead of downgrading Pedestal.
 - `Portfolio` (https://github.com/cjohansen/portfolio) - the Storybook-like visual tool for the UI testing
 - `Integrant` (https://github.com/weavejester/integrant) - for component management
 - `Aero` (https://github.com/juxt/aero) - for application for configuration

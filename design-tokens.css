@@ -1,0 +1,253 @@
+/* ==========================================================================
+   Zandy Touch design tokens - single source of truth for how the site looks.
+   Rationale for every group is in visual-guide.md. Contrast ratios are checked
+   by scripts/design/contrast.py (all pairs listed there pass WCAG 2.1 AA).
+   No page or layout CSS lives here: only custom properties and @font-face.
+   DEPLOYMENT: the frontend server serves this file and assets/ together, e.g.
+     /static/design-tokens.css   and   /static/assets/...
+   The three font URLs below are relative ("assets/fonts/..."), so they keep
+   working as long as assets/ stays next to this file. To move assets/ elsewhere
+   (or to a CDN host), change only those three url(...) values; nothing else in
+   this file refers to a path. (CSS variables cannot be used inside @font-face.)
+   If fonts end up on a different origin than the CSS, send
+   Access-Control-Allow-Origin on the font files.
+   ========================================================================== */
+
+/* Self-hosted, latin subset, SIL OFL 1.1. 3 files, about 71 KB in total. */
+@font-face {
+  font-family: "Playfair Display";
+  src: url("assets/fonts/playfair-display-latin-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("assets/fonts/inter-latin-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("assets/fonts/inter-latin-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ---- Brand colour (raw values) ---------------------------------------- */
+  --zt-black: #0b0b0b;        /* logo field; header, footer, primary text-button */
+  --zt-black-raised: #1a1814; /* cards and panels sitting on black */
+  --zt-gold: #d6a94f;         /* sampled from the logo wordmark; accent on dark */
+  --zt-gold-light: #f4cc6a;   /* sampled logo highlight; hover on dark */
+  --zt-gold-deep: #8a6310;    /* darkened gold for text/borders on light surfaces */
+  --zt-ivory: #f6f0e4;        /* page surface and text on black */
+  --zt-ivory-card: #fbf8f1;   /* cards on ivory */
+  --zt-white: #ffffff;        /* inputs, product photo backdrop */
+
+  /* ---- Semantic colour: light surfaces (default) ------------------------ */
+  --color-primary: var(--zt-black);
+  --color-accent: var(--zt-gold);
+  --color-accent-text: var(--zt-gold-deep);   /* gold-toned text on light surfaces */
+  --color-surface: var(--zt-ivory);
+  --color-surface-raised: var(--zt-ivory-card);
+  --color-surface-field: var(--zt-white);
+  --color-surface-inverse: var(--zt-black);
+  --color-text: #1a1713;
+  --color-text-muted: #5c5446;
+  --color-text-inverse: var(--zt-ivory);
+  --color-text-inverse-muted: #b8ae9c;
+  --color-border: #d9cfbc;           /* decorative dividers only (not a UI boundary) */
+  --color-border-strong: #8c826f;    /* input and control borders, 3:1+ */
+  --color-rule-gold: var(--zt-gold); /* hairlines; decorative, never carries meaning */
+
+  --color-success: #1e6b3b;
+  --color-success-bg: #e3f1e7;
+  --color-warning: #7a4f00;
+  --color-warning-bg: #fbebc8;
+  --color-error: #b42318;
+  --color-error-bg: #fbe4e1;
+  --color-info: #1a1713;
+  --color-info-bg: #ece5d4;
+
+  /* Same roles when the component sits on black (header, footer, hero) */
+  --color-on-dark-accent: var(--zt-gold);
+  --color-on-dark-accent-hover: var(--zt-gold-light);
+  --color-on-dark-success: #6fcf8e;
+  --color-on-dark-warning: #f4cc6a;
+  --color-on-dark-error: #ff8a80;
+
+  /* ---- Component colour: buttons ---------------------------------------- */
+  /* Primary on light surfaces: black fill, gold label. */
+  --button-primary-bg: var(--zt-black);
+  --button-primary-text: var(--zt-gold);
+  --button-primary-bg-hover: #26221b;
+  --button-primary-text-hover: var(--zt-gold-light);
+  --button-primary-bg-active: #000000;
+  /* Primary on black surfaces: gold fill, black label. */
+  --button-primary-on-dark-bg: var(--zt-gold);
+  --button-primary-on-dark-text: var(--zt-black);
+  --button-primary-on-dark-bg-hover: var(--zt-gold-light);
+  --button-primary-on-dark-bg-active: #c29a43;
+  /* Secondary: outline. */
+  --button-secondary-border: var(--zt-black);
+  --button-secondary-text: var(--zt-black);
+  --button-secondary-bg-hover: #ece5d4;
+  --button-secondary-on-dark-border: var(--zt-gold);
+  --button-secondary-on-dark-text: var(--zt-gold);
+  --button-secondary-on-dark-bg-hover: #26221b;
+  /* Disabled: flat, no hover, text says why. Exempt from contrast by WCAG, kept readable. */
+  --button-disabled-bg: #e4dccb;
+  --button-disabled-text: #5f574a;
+  --button-disabled-border: #cfc5b0;
+
+  /* ---- Component colour: fields and focus ------------------------------- */
+  --field-bg: var(--zt-white);
+  --field-border: var(--color-border-strong);
+  --field-border-hover: #1a1713;
+  --field-border-focus: #0b0b0b;
+  --field-border-error: var(--color-error);
+  --field-bg-disabled: #ece5d4;
+  --field-text-disabled: #5f574a;
+  --focus-ring-color: #0b0b0b;                 /* on light surfaces */
+  --focus-ring-color-on-dark: var(--zt-gold-light);
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+  --link-color: #1a1713;                       /* underlined always on light surfaces */
+  --link-color-hover: var(--zt-gold-deep);
+  --link-color-on-dark: var(--zt-gold);
+
+  /* ---- Badges ------------------------------------------------------------ */
+  --badge-new-bg: var(--zt-black);
+  --badge-new-text: var(--zt-gold);
+  --badge-new-border: var(--zt-gold);
+  --badge-own-brand-bg: var(--zt-gold);
+  --badge-own-brand-text: var(--zt-black);
+  --badge-sold-out-bg: var(--zt-ivory);
+  --badge-sold-out-text: #1a1713;
+  --badge-sold-out-border: #8c826f;
+  --badge-featured-bg: var(--zt-white);
+  --badge-featured-text: var(--zt-gold-deep);
+  --badge-featured-border: var(--zt-gold-deep);
+  --badge-low-stock-bg: var(--color-warning-bg);   /* admin only; customers never see counts */
+  --badge-low-stock-text: var(--color-warning);
+  --badge-low-stock-border: var(--color-warning);
+  --badge-draft-notice-bg: var(--color-warning-bg); /* "Draft text, not yet reviewed" on placeholder policies */
+  --badge-draft-notice-text: var(--color-warning);
+  --badge-draft-notice-border: var(--color-warning);
+  --badge-draft-notice-bar: var(--color-warning);   /* 4px left bar */
+
+  /* Admin status pills: pill radius, sentence case 13px 600. The word carries the meaning. */
+  --pill-height: 28px;
+  --pill-padding-x: 14px;
+  --pill-font-size: 0.8125rem;
+  --pill-info-bg: var(--color-info-bg);     --pill-info-text: var(--color-info);        /* Draft, Placed */
+  --pill-success-bg: var(--color-success-bg); --pill-success-text: var(--color-success); /* Published, Delivered */
+  --pill-warning-bg: var(--color-warning-bg); --pill-warning-text: var(--color-warning); /* Confirmed, Out for delivery */
+  --pill-error-bg: var(--color-error-bg);   --pill-error-text: var(--color-error);      /* Cancelled */
+  --pill-muted-bg: var(--color-info-bg);    --pill-muted-text: var(--color-text-muted); /* Archived */
+
+  /* Stock (admin StockPanel, StockMovementList, StockNotice) */
+  --stock-increase-text: var(--color-success);  /* always printed with a "+" sign */
+  --stock-decrease-text: var(--color-error);    /* always printed with a "-" sign */
+  --stock-low-text: var(--color-warning);       /* count shown beside the Low stock badge */
+  --stock-out-text: var(--color-error);         /* count 0 beside the Sold out badge */
+  --badge-height: 28px;
+  --badge-padding-x: 12px;
+  --badge-font-size: 0.75rem;     /* 12px, uppercase, tracked, 600 */
+  --badge-tracking: 0.1em;
+  --badge-radius: var(--radius-sm);
+
+  /* ---- Typography -------------------------------------------------------- */
+  --font-heading: "Playfair Display", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-weight-regular: 400;
+  --font-weight-strong: 600;
+  --font-weight-heading: 600;
+
+  /* Scale: 17px body for sunlit phone screens; ratio about 1.2, headings fluid. */
+  --text-xs: 0.8125rem;   /* 13px: fine print, legal, badge caption (never for prices or actions) */
+  --text-sm: 0.9375rem;   /* 15px: metadata, helper text, product brand line */
+  --text-base: 1.0625rem; /* 17px: body, inputs, buttons */
+  --text-lg: 1.25rem;     /* 20px: lead paragraph, product name on detail */
+  --text-xl: clamp(1.375rem, 1.2rem + 0.8vw, 1.625rem);   /* 22-26px: h3, price on product page */
+  --text-2xl: clamp(1.625rem, 1.35rem + 1.3vw, 2.125rem); /* 26-34px: h2 */
+  --text-3xl: clamp(2rem, 1.6rem + 2vw, 3rem);            /* 32-48px: h1, hero */
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-body: 1.6;
+  --tracking-caps: 0.14em;   /* tagline and small uppercase labels */
+  --tracking-normal: 0;
+  --measure: 66ch;           /* max line length for reading text */
+
+  /* ---- Spacing (4px base) ------------------------------------------------ */
+  --space-1: 0.25rem;  /*  4 */
+  --space-2: 0.5rem;   /*  8 */
+  --space-3: 0.75rem;  /* 12 */
+  --space-4: 1rem;     /* 16 */
+  --space-5: 1.5rem;   /* 24 */
+  --space-6: 2rem;     /* 32 */
+  --space-7: 3rem;     /* 48 */
+  --space-8: 4rem;     /* 64 */
+  --space-9: 6rem;     /* 96 */
+  --gutter: var(--space-4);          /* page side padding on phones */
+  --gutter-wide: var(--space-6);
+  --grid-gap: var(--space-3);        /* product grid gap on phones (two columns) */
+  --grid-gap-wide: var(--space-5);
+  --container-max: 72rem;            /* 1152px */
+  --tap-min: 48px;                   /* minimum touch target (WCAG asks 24, spec 44) */
+  --control-height: 48px;            /* buttons, inputs, selects */
+  --control-height-sm: 40px;         /* admin tables only, never on public pages */
+
+  /* ---- Radius ------------------------------------------------------------ */
+  --radius-sm: 4px;     /* badges, chips */
+  --radius-md: 8px;     /* buttons, inputs, selects */
+  --radius-lg: 12px;    /* cards, panels, dialogs */
+  --radius-pill: 999px; /* quantity stepper, filter chips */
+
+  /* ---- Borders and shadow ------------------------------------------------ */
+  --border-width: 1px;
+  --border-width-strong: 2px;
+  /* Shadows are warm, low and rare: gold-black tint, never grey blur */
+  --shadow-1: 0 1px 2px rgba(26, 19, 8, 0.08);                         /* card at rest */
+  --shadow-2: 0 4px 12px rgba(26, 19, 8, 0.12);                        /* card hover, sticky bar */
+  --shadow-3: 0 12px 32px rgba(26, 19, 8, 0.2);                        /* dialogs, menu sheet */
+  --shadow-sticky-up: 0 -4px 12px rgba(26, 19, 8, 0.12);               /* sticky add-to-cart bar */
+
+  /* ---- Motion ------------------------------------------------------------ */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- Imagery ----------------------------------------------------------- */
+  --image-ratio-product: 4 / 5;      /* grid cards and gallery main image */
+  --image-ratio-tile: 1 / 1;         /* category tiles and thumbnails */
+  --image-ratio-hero: 4 / 5;         /* mobile hero; desktop uses 3 / 2 crop */
+  --image-bg: var(--zt-white);       /* letterbox colour behind transparent or short images */
+  --image-placeholder-bg: #ece5d4;   /* neutral labelled placeholder */
+  --image-placeholder-text: #5c5446;
+  --image-radius: var(--radius-lg);
+
+  /* ---- Icons ------------------------------------------------------------- */
+  --icon-size: 24px;
+  --icon-size-sm: 20px;
+  --icon-size-lg: 32px;
+  --icon-stroke: 2;                  /* Tabler outline default; files carry it */
+
+  /* ---- Layers ------------------------------------------------------------ */
+  --z-sticky: 100;
+  --z-header: 200;
+  --z-overlay: 300;
+  --z-dialog: 400;
+  --z-toast: 500;
+}
+
+/* Honour the reduced motion preference at token level so components inherit it. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+  }
+}

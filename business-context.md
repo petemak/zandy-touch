@@ -10,6 +10,8 @@
  5. Weight loss 
  6. Health & Wellness 
 
+Dietary supplements and the weight-gain porridge belong to Health & Wellness. There is no "Bedroom" category.
+
 We are committed to providing quality products that help our customers feel confident, beautiful, and satisfied. We currently reach customers through social media, referrals, and personal connections. We also have a physical shop in Kampala where walk-in clients can choose and buy products.  Our goal is to establish a professional online shop where customers can conveniently browse our product range, view product details and prices, and place orders from anywhere.
 
 The online shop will provide a smooth and enjoyable shopping experience, making it easy for customers to discover products, order conveniently, and receive their purchases through reliable delivery services. We aim to expand our reach across Uganda and outside the country to reach more potential customers.
@@ -44,7 +46,13 @@ Customer:
 - View shopping cart
 - Enter name, address and submit order
 
-Customers access webshop and order as guests. Payment in cash or mobile money on delivery. Delivery costs are negotiated with the customer]
+Customers access webshop and order as guests. Payment in cash or mobile money on delivery. Delivery costs are negotiated with the customer.
+
+Further rules:
+- A product must have a price before it can be made available for ordering online.
+- Stock is counted: each product has a stock quantity, ordering reduces it, and a product with no stock shows as sold out.
+- Staff cannot enter orders on behalf of customers. All orders are placed by customers through the webshop.
+- Policy texts (terms of sale, privacy, returns, order terms) are drafted as placeholders and reviewed by a human before launch.]
 
 ## What Makes Us Different
 [In addition to established brands we also develop our own products under the "Zandy Touch" brand. emphasizing natural, organic and authentic products. At Zandy Touch, we believe beauty comes with confidence. We focus on offering carefully selected products, friendly customer service, convenient ordering, and a positive shopping experience. We want to listen to customers and provide suitable products that actually satisfy their needs.  We carefully choose and source high quality products that are in high demand and target a good profit margin without overpricing customers. 
@@ -65,7 +73,7 @@ Our commitment is to build lasting customer relationships through trust, profess
  Walmart, for focus on user-experience and efficiency.]
 
 ## Scale and budget
-[It is currently a small business but we expect real traffic. Potential customers in the hundreds expected to rise to thousands. The domain name will be zandytouch.com and will be registered later. We don't want to spend more than 15 USD on hosting]
+[It is currently a small business but we expect real traffic. Potential customers in the hundreds expected to rise to thousands. The domain name will be zandytouch.com and will be registered later. We don't want to spend more than 15 USD per month on hosting. A domain at about 12 USD per year is too expensive: find the cheapest way to register and run the domain.]
 
 ## Photos
 [Sample product images and logos can be found here:
@@ -76,13 +84,16 @@ NOTE:
 - Please use these images in business/images/products as inspiration. They are just samples and are not suitable for representing products. 
   The file names identify the brand and product name.
 - The logo in business/images/logo is the real brand mark: keep the Z monogram, wordmark and slogan, recreate as SVG, 
-  and don’t use the badge’s phone number or category icons in the site logo.]
+  and don’t use the badge’s phone number or category icons in the site logo.
+- The owner will fill the product catalogue and upload real product photos before the site goes public.
+  Until then, seed the database with sample products that use related images in the public domain (or CC0),
+  for example from Wikimedia Commons or Openverse, matched to each product's category. Record the source and licence of every seed image.]
  
 ## Payments and delivery
 [Since credit cards are not widespread in Uganda, currently customers order by phone call or WhatsApp and pay using mobile money or cash on delivery. 
 - Delivery is to major cities in Uganda but expansion to neighbouring countries is planned.
-- Prices are negotiated with the customer.
-- In the webshop, prices will be set by the owner when setting up the product catalogue.
+- Delivery prices are negotiated with the customer.
+- In the webshop, product prices are set by the owner when setting up the product catalogue.
 The number is: +256706105779
-Owner email: sandratonanyonjo@gmail.com]
+Owner email: sandratonanyonjo@gmail.com. Use it as the sender address for site emails and as the address that receives order alerts.]
  

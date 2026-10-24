@@ -51,7 +51,15 @@ Write architecture.md containing:
    mechanical check that qa can run (a grep, a script, a
    command) and what a pass looks like. A rule with no check
    is a hope.
-8. Open questions for the owner.
+8. What deployment must provide: the processes, memory budget,
+   routing, caching, storage, backup, environment and secret
+   requirements your design places on hosting, plus acceptance
+   checks deployment-engineer can run. State requirements only.
+   Do not choose providers, plans, CDNs, registrars or domains,
+   and do not quote prices: deployment-engineer researches those
+   after qa and lets the owner choose. If research done now is
+   useful, put it in deployment-handover.md as non-binding leads.
+9. Open questions for the owner.
 
 Also review api-contract.md, which ux-designer drafted: check
 naming, error shape, idempotency and consistency with your
@@ -78,5 +86,5 @@ Rules:
   engineering-standards.md as a hard constraint.
 - Before recommending an unfamiliar technology, search for
   current information and say what you checked.
-- Write only architecture.md, architecture-review.md and
-  amendments to api-contract.md.
+- Write only architecture.md, architecture-review.md,
+  deployment-handover.md and amendments to api-contract.md.
