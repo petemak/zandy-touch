@@ -1,0 +1,13 @@
+;; Frontend server configuration (Aero). Environment-specific values come from
+;; environment variables only; the defaults below are for local development.
+{:port #long #or [#env PORT 8081]
+ :api-base-url #or [#env API_BASE_URL "http://127.0.0.1:8080"]
+ :site-base-url #or [#env SITE_BASE_URL "http://127.0.0.1:8081"]
+ :site-indexable #boolean #or [#env SITE_INDEXABLE false]
+ :static-dir #or [#env STATIC_DIR "../target/static"]
+ :api-timeout-ms #long #or [#env API_TIMEOUT_MS 3000]
+ :page-cache
+ {:catalogue #or [#env PAGE_CACHE_CATALOGUE "public, max-age=0, s-maxage=60, stale-while-revalidate=30, stale-if-error=86400"]
+  :info #or [#env PAGE_CACHE_INFO "public, max-age=0, s-maxage=600, stale-while-revalidate=600, stale-if-error=86400"]
+  :shell #or [#env PAGE_CACHE_SHELL "no-cache"]
+  :not-found #or [#env PAGE_CACHE_NOT_FOUND "public, max-age=0, s-maxage=60"]}}

@@ -1,0 +1,10 @@
+{
+  "name": "zandy-touch-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Zandy Touch browser bundle build (shadow-cljs). ClojureScript libraries are declared in shadow-cljs.edn.",
+  "devDependencies": {
+    "shadow-cljs": "3.5.7",
+    "snabbdom": "^3.6.2"
+  }
+}

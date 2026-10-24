@@ -1,0 +1,42 @@
+;; Versioned migration.
+{:id :0005-engagement-policies-schema,
+ :description "Subscribers, contact messages, policies",
+ :tx-data
+ [#:db{:ident :subscriber/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :subscriber/email,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :subscriber/phone,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :subscriber/consent-text-version, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :subscriber/source, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :subscriber/subscribed-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :subscriber/active?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :contact-message/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :contact-message/name, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :contact-message/phone, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :contact-message/email, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :contact-message/message, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :contact-message/received-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/key,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :policy/type, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/version, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/title, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/review-status, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/summary, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/blocks, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/content-hash, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/effective-from, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :policy/current?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}]}

@@ -1,0 +1,26 @@
+{:paths ["src/backend" "resources"]
+
+ :deps
+ {org.clojure/clojure           {:mvn/version "1.12.4"}
+  com.datomic/peer              {:mvn/version "1.0.7745"}
+  io.pedestal/pedestal.service  {:mvn/version "0.8.2"}
+  io.pedestal/pedestal.jetty    {:mvn/version "0.8.2"}
+  integrant/integrant           {:mvn/version "1.0.1"}
+  aero/aero                     {:mvn/version "1.1.6"}
+  metosin/malli                 {:mvn/version "0.20.3"}
+  metosin/jsonista              {:mvn/version "1.0.2"}
+  com.password4j/password4j     {:mvn/version "1.8.4"}
+  org.eclipse.angus/angus-mail  {:mvn/version "2.0.5"}
+  ch.qos.logback/logback-classic {:mvn/version "1.5.18"}}
+
+ :aliases
+ {:run             {:main-opts ["-m" "zandy.platform.system"]
+                    :jvm-opts ["-Xss512k" "-Dzandy.profile=dev"]}
+  :migrate         {:main-opts ["-m" "zandy.platform.migrations"]}
+  :bootstrap-owner {:main-opts ["-m" "zandy.features.accounts.bootstrap"]}
+  :seed            {:main-opts ["-m" "zandy.seed.core"]}
+  :send-test-mail  {:main-opts ["-m" "zandy.platform.mailer"]}
+  :test            {:extra-paths ["test/backend"]
+                    :extra-deps  {io.github.cognitect-labs/test-runner
+                                  {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                    :main-opts   ["-m" "cognitect.test-runner" "-d" "test/backend"]}}}

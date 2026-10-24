@@ -133,24 +133,26 @@ Response 200:
   "businessName": "Zandy Touch",
   "tagline": "Beauty with Confidence",
   "phone": "+256706105779",
-  "whatsapp": null,
-  "email": null,
-  "shopAddress": null,
-  "openingHours": null,
+  "whatsapp": "+256706105779",
+  "email": "sandratonanyonjo@gmail.com",
+  "shopAddress": "Ring roads, Rubaga Rd, opposite Red Cross, Kampala, Uganda",
+  "openingHours": [ { "days": "Monday to Saturday", "opens": "08:00", "closes": "22:00" },
+                    { "days": "Sunday", "opens": "10:00", "closes": "21:30" } ],
+  "social": { "instagram": null, "tiktok": null },
   "currency": "UGX",
   "paymentMethods": ["cash", "mobileMoney"],
   "maxQuantityPerLine": 10
 }
 ```
-`whatsapp`, `email`, `shopAddress` and `openingHours` come from server configuration and are `null` until the owner confirms them (Q1, Q10, Q11). The frontend hides any null item. `email` here is the optional public contact address; it is not the sender and alert address, which is the owner email from configuration (`OWNER_EMAIL`) and is never exposed by default.
+`whatsapp`, `email`, `shopAddress`, `openingHours` and `social` come from server configuration; the values shown are the owner's (business-context.md, "Owner decisions"). `social.instagram` and `social.tiktok` are profile URLs, `null` until the owner adds the accounts. The frontend hides any null item (so the Instagram and TikTok links appear once configured). `email` here is the optional public contact address; it is not the sender and alert address, which is the owner email from configuration (`OWNER_EMAIL`) and is never exposed by default.
 
 ### GET /api/delivery-areas
 Access: public. Cache: see 1.5.
 ```
-{ "countries": [ { "code": "UG", "name": "Uganda", "cities": ["Kampala", "Entebbe", "Jinja", "Mbarara", "Gulu", "Mbale"] } ],
-  "allowOtherCity": true }
+{ "countries": [ { "code": "UG", "name": "Uganda", "cities": ["Kampala", "Entebbe", "Jinja", "Mbale", "Mbarara", "Fort Portal"] } ],
+  "allowOtherCity": false }
 ```
-Configuration; the city list is a placeholder until the owner supplies it (Q3). No fees are returned, because delivery cost is negotiated per order.
+Configuration; the cities are the owner's list. `allowOtherCity` is `false`: checkout offers only these cities, and the delivery page invites a WhatsApp enquiry for anywhere else. The flag stays in the contract so other cities can be enabled later by configuration. No fees are returned, because delivery cost is negotiated per order.
 
 ### GET /api/categories
 Access: public. Cache: see 1.5.
@@ -231,7 +233,7 @@ Response 200:
 ```
 { "items": [ { "productId": "…", "slug": "…", "name": "…", "unitPrice": 85000, "quantity": 2, "lineTotal": 170000,
                "availability": "available", "maxQuantity": 10, "purchasable": true,
-               "image": { "…": "…" } or null, "problem": null } ],
+               "image": { "id": "…", "alt": "…", "urls": { "thumb": "…", "medium": "…", "large": "…" } } or null, "problem": null } ],
   "itemsSubtotal": 170000, "currency": "UGX",
   "deliveryFee": null, "deliveryFeeNote": "Agreed with you before dispatch",
   "hasProblems": false }
@@ -257,7 +259,7 @@ Access: public (guest). Requires `Idempotency-Key`. Rate limited. Cache: `no-sto
 ```
 Field rules:
 - `customer.name` 2 to 100. `customer.phone` required, valid Uganda number. `customer.email` optional, valid email. `customer.preferredContact` `phone` or `whatsapp`.
-- `delivery.countryCode` `UG` for now. `city` is one of the listed cities, or free text 2 to 60 when `allowOtherCity` is true. `area` 2 to 80. `addressLine` 3 to 200. `directions` optional, up to 300.
+- `delivery.countryCode` `UG` for now. `city` must be one of the listed cities (or free text 2 to 60 only when `allowOtherCity` is true); otherwise 422 `validationFailed` with a `details` entry for `delivery.city`. `area` 2 to 80. `addressLine` 3 to 200. `directions` optional, up to 300.
 - `paymentMethod` `cash` or `mobileMoney` (a preference; nothing is charged online).
 - `note` optional, up to 500. `items` 1 to 20 lines, quantity 1 to `maxQuantityPerLine`, unique `productId`s. `expectedUnitPrice` is the price the customer saw.
 - `agreement` is required and its `version` must equal the current `orderTerms` version. This is the explicit acceptance; nothing is implied or defaulted.
@@ -565,3 +567,20 @@ Every SSR page also gets `GET /api/site-info`. Failure handling: if the API is u
 Launch gate: when the frontend server runs with `SITE_INDEXABLE=true` it checks the four policy documents at start-up and refuses to start while any has `reviewStatus: "placeholder"`.
 
 The browser calls the API directly for cart validation, order placement, tracking, forms and all admin actions.
+
+---
+
+## 13. Operational routes and clarifications (added 25 October 2026, before the build)
+
+### GET /api/healthz
+Access: public. Backend only. 200 `{ "status": "ok" }` when Datomic is reachable, otherwise 503 `serviceUnavailable`. Cache: `no-store`.
+
+### GET /media/{photoId}-{variant}.webp
+Access: public. Backend only. `variant` is `thumb`, `medium` or `large`. 200 with `image/webp`, 404 if unknown. Cache: see 1.5.
+
+Clarifications:
+- Honeypot: when `website` is non-empty, `POST /api/orders` returns 201 with an order-shaped body (fresh id and order number) and stores nothing. Such an order is not trackable. The other honeypot endpoints return their normal success body and store nothing.
+- Rate limits not given above (orders, subscriptions, contact messages, password-reset requests) are configurable per client IP; the backend sets conservative defaults in `resources/config.edn` and documents them there. Exceeding a limit returns 429 with `Retry-After`.
+- Admin order history (section 7) lists status changes only; delivery-fee changes are not history entries in v1.
+- All four policies start with `reviewStatus: "placeholder"`; the frontend shows the draft notice until the owner approves each text.
+

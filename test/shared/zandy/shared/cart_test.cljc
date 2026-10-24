@@ -1,0 +1,35 @@
+(ns zandy.shared.cart-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [zandy.shared.cart :as cart]))
+
+(def serum {:id "p1" :slug "serum" :name "Serum" :price 85000 :image nil})
+
+(deftest add-merge-and-clamp
+  (let [c (cart/add-item cart/empty-cart serum 2 10)]
+    (is (= 2 (cart/count-items c)))
+    (is (= 5 (cart/count-items (cart/add-item c serum 3 10))))
+    (testing "never above the line maximum"
+      (is (= 10 (cart/count-items (cart/add-item c serum 50 10)))))
+    (testing "at most 20 lines"
+      (let [full (reduce (fn [c i] (cart/add-item c (assoc serum :id (str "x" i)) 1 10)) cart/empty-cart (range 25))]
+        (is (= 20 (count (:items full))))))))
+
+(deftest set-and-remove
+  (let [c (cart/add-item cart/empty-cart serum 2 10)]
+    (is (= 1 (get-in (cart/set-quantity c "p1" 0 10) [:items 0 :quantity])))
+    (is (= 4 (get-in (cart/set-quantity c "p1" 4 10) [:items 0 :quantity])))
+    (is (empty? (:items (cart/remove-item c "p1"))))))
+
+(deftest requests-and-validation
+  (let [c (cart/add-item cart/empty-cart serum 2 10)
+        v {:items [{:productId "p1" :unitPrice 90000 :name "Serum" :slug "serum" :image nil :problem nil}] :hasProblems false}]
+    (is (= {:items [{:productId "p1" :quantity 2}]} (cart/validation-request c)))
+    (is (= 90000 (get-in (cart/apply-validation c v) [:items 0 :price])))
+    (testing "the price the customer saw is the validated price"
+      (is (= [{:productId "p1" :quantity 2 :expectedUnitPrice 90000}] (cart/order-items c v))))
+    (testing "blocked until validated without problems"
+      (is (cart/blocked? nil))
+      (is (cart/blocked? {:hasProblems true}))
+      (is (not (cart/blocked? v))))
+    (testing "signature changes with contents"
+      (is (not= (cart/cart-signature c) (cart/cart-signature (cart/set-quantity c "p1" 3 10)))))))

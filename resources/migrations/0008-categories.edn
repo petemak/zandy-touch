@@ -1,0 +1,34 @@
+;; Versioned migration.
+{:id :0008-categories,
+ :description "The six categories",
+ :tx-data
+ [#:category{:id #uuid "99a38b02-39c9-351d-8808-d6759a19fffd",
+             :slug "skincare",
+             :name "Skincare",
+             :description "Cleansers, serums and creams for everyday skin care.",
+             :sort-order 1}
+  #:category{:id #uuid "8c69bd84-f521-345f-a5a3-28d2d62fd64f",
+             :slug "perfumes",
+             :name "Perfumes",
+             :description "Fragrances and body mists for every occasion.",
+             :sort-order 2}
+  #:category{:id #uuid "4dd7b5de-aa69-3e2e-9650-246a5e455249",
+             :slug "body-shaping",
+             :name "Body-shaping",
+             :description "Shapewear and body contour products.",
+             :sort-order 3}
+  #:category{:id #uuid "019f0f26-12c1-3c15-9d3e-83b8e5e2e0bb",
+             :slug "body-care",
+             :name "Body care",
+             :description "Lotions, scrubs, oils and creams for the body.",
+             :sort-order 4}
+  #:category{:id #uuid "e7eabfb0-f84e-32ef-b8a0-a3bd7a67f0b0",
+             :slug "weight-loss",
+             :name "Weight loss",
+             :description "Teas, drinks and tools to support your routine.",
+             :sort-order 5}
+  #:category{:id #uuid "c722bf9b-958b-3cdb-8a49-f062e9a9a9cb",
+             :slug "health-and-wellness",
+             :name "Health & Wellness",
+             :description "Dietary supplements, wellness products and our weight-gain porridge.",
+             :sort-order 6}]}

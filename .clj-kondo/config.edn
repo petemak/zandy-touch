@@ -8,4 +8,7 @@
    environ.core       {:message "Use Aero"}
    schema.core        {:message "Use Malli"}
    clojure.spec.alpha {:message "Use Malli for validation"}
-   ring.adapter.jetty {:message "Pedestal runs the server"}}}}
+   ring.adapter.jetty {:message "Pedestal runs the server"}
+   next.jdbc          {:message "No SQL for application data; use Datomic"}
+   clojure.java.jdbc  {:message "No SQL for application data; use Datomic"}
+   honey.sql          {:message "No SQL for application data; use Datomic"}}}}

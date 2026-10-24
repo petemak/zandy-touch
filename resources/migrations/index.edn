@@ -1,0 +1,2 @@
+;; Ordered list of migration files. Add new files at the end; never reorder or remove.
+["0001-ledger.edn" "0002-catalog-schema.edn" "0003-accounts-schema.edn" "0004-orders-schema.edn" "0005-engagement-policies-schema.edn" "0006-platform-schema.edn" "0007-transaction-functions.edn" "0008-categories.edn" "0009-policies.edn"]

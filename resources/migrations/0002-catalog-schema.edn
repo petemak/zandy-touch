@@ -1,0 +1,78 @@
+;; Versioned migration.
+{:id :0002-catalog-schema,
+ :description "Categories, products, images, photos, stock movements",
+ :tx-data
+ [#:db{:ident :category/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :category/slug,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :category/name, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :category/description, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :category/sort-order, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :product/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :product/slug,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :product/sku,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/value}
+  #:db{:ident :product/name, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :product/brand, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :product/own-brand?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :product/category, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :product/price, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :product/short-description, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :product/description, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :product/size, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :product/how-to-use, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :product/ingredients, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :product/featured?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :product/status, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :product/first-published-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :product/stock-quantity, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :product/version, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :product/created-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :product/updated-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :product/updated-by, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :product/images, :valueType :db.type/ref, :cardinality :db.cardinality/many, :isComponent true}
+  #:db{:ident :product-image/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :product-image/position, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :product-image/alt, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :product-image/photo, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :photo/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :photo/original-filename, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :photo/content-type, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :photo/width, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :photo/height, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :photo/uploaded-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :photo/seed?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :photo/uploaded-by, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :stock-movement/type, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/reason, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/delta, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/quantity-after, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/note, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/product, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/by, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/order, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :stock-movement/order-number, :valueType :db.type/string, :cardinality :db.cardinality/one}]}

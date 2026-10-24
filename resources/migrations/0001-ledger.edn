@@ -1,0 +1,10 @@
+;; Versioned migration. Never edit an applied migration; add a new file instead.
+{:id :0001-ledger,
+ :description "Migration ledger",
+ :tx-data
+ [#:db{:ident :migration/id,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :migration/checksum, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :migration/applied-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}]}

@@ -1,0 +1,8 @@
+;; Versioned migration. Approving a text is a new migration that sets :policy/review-status to :approved.
+{:id :0009-policies,
+ :description "Four placeholder policy documents (awaiting human review)",
+ :policy-files
+ ["policies/orderTerms/2026-10-01.edn"
+  "policies/termsOfSale/2026-10-01.edn"
+  "policies/privacy/2026-10-01.edn"
+  "policies/returns/2026-10-01.edn"]}

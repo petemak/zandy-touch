@@ -1,0 +1,14 @@
+;; DRAFT placeholder text. Must be reviewed by a human (the owner) before launch.
+{:type "returns"
+ :version "2026-10-01"
+ :title "Returns and refunds"
+ :review-status :placeholder
+ :effective-from #inst "2026-10-01T00:00:00Z"
+ :summary []
+ :blocks [{:type "paragraph" :text "DRAFT TEXT, NOT YET REVIEWED. This is placeholder wording that the shop owner must review before it is used."}
+          {:type "heading" :text "1. Checking your order"}
+          {:type "paragraph" :text "Please check your products when they are delivered. Tell us straight away if an item is damaged or not what you ordered."}
+          {:type "heading" :text "2. Returns"}
+          {:type "paragraph" :text "Unopened products in their original condition may be returned. Contact us by phone or WhatsApp to arrange it."}
+          {:type "heading" :text "3. Refunds"}
+          {:type "paragraph" :text "Where a return is accepted we refund the price of the product in the same way you paid."}]}

@@ -1,0 +1,9 @@
+;; Versioned migration. Functions run on the transactor and may only use clojure.core and datomic.api.
+{:id :0007-transaction-functions,
+ :description "Transaction functions: rate limit, idempotency claim, orders, stock",
+ :dbfns
+ [{:ident :ratelimit/hit, :file "migrations/dbfns/ratelimit_hit.clj"}
+  {:ident :idempotency/claim, :file "migrations/dbfns/idempotency_claim.clj"}
+  {:ident :orders/place-order, :file "migrations/dbfns/place_order.clj"}
+  {:ident :orders/change-status, :file "migrations/dbfns/change_order_status.clj"}
+  {:ident :catalog/adjust-stock, :file "migrations/dbfns/adjust_stock.clj"}]}

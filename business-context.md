@@ -83,8 +83,10 @@ Our commitment is to build lasting customer relationships through trust, profess
 NOTE: 
 - Please use these images in business/images/products as inspiration. They are just samples and are not suitable for representing products. 
   The file names identify the brand and product name.
-- The logo in business/images/logo is the real brand mark: keep the Z monogram, wordmark and slogan, recreate as SVG, 
-  and don’t use the badge’s phone number or category icons in the site logo.
+- The logo in business/images/logo is the real brand mark. Use the real artwork, not a redrawn copy: cut the Z monogram,
+  the "Zandy Touch" wordmark and the slogan out of it for the site logo on dark surfaces (header, footer, share image).
+  Don't use the badge's circle, phone number or category icons in the site logo. A simplified SVG copy is only for
+  places the cut-out can't work (favicon, app icon, light backgrounds) until a vector master is supplied.
 - The owner will fill the product catalogue and upload real product photos before the site goes public.
   Until then, seed the database with sample products that use related images in the public domain (or CC0),
   for example from Wikimedia Commons or Openverse, matched to each product's category. Record the source and licence of every seed image.]

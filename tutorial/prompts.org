@@ -7,3 +7,12 @@ design spec and API contract. Then use the visual-designer
 subagent to derive the visual identity and design tokens for
 the customers described in business-context.md. Then use the
 architect subagent in design mode to produce architecture.md.
+
+** 2. Spawn the build agents
+Spawn two teammates to build the site from design-spec.md and api-contract.md:
+
+- One teammate using the frontend-cljs agent type, owning everything under src/frontend/
+- One teammate using the backend-clojure agent type, owning everything under src/backend/
+  
+Have them confirm they're both reading the same api-contract.md before either writes code.
+Wait for both to finish before proceeding.

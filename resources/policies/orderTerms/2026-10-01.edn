@@ -1,0 +1,27 @@
+;; DRAFT placeholder text. Must be reviewed by a human (the owner) before launch.
+{:type "orderTerms"
+ :version "2026-10-01"
+ :title "Order terms"
+ :review-status :placeholder
+ :effective-from #inst "2026-10-01T00:00:00Z"
+ :summary ["Prices shown are product prices in UGX and exclude delivery."
+           "The delivery fee is agreed with you before your order is dispatched."
+           "You can cancel before dispatch, for example if you do not agree the fee."
+           "You pay in cash or by mobile money when your order is delivered."
+           "Please be reachable on the phone number you give us."
+           "Our returns rules and how we use your personal data are described below."]
+ :blocks [{:type "paragraph" :text "DRAFT TEXT, NOT YET REVIEWED. This is placeholder wording that the shop owner must review before it is used."}
+          {:type "heading" :text "1. Prices and delivery"}
+          {:type "paragraph" :text "Prices shown on the website are the product prices in Ugandan shillings (UGX). They do not include delivery. The delivery fee is agreed with you by phone or WhatsApp after you place your order, and it is recorded before your order is dispatched."}
+          {:type "heading" :text "2. Cancelling your order"}
+          {:type "paragraph" :text "You may cancel your order at any time before it is dispatched, for example if you do not agree the delivery fee. Tell us by phone or WhatsApp. Once an order has been dispatched it can no longer be cancelled through the website."}
+          {:type "heading" :text "3. Payment"}
+          {:type "paragraph" :text "You pay when your order is delivered, in cash or by mobile money. Nothing is charged online."}
+          {:type "heading" :text "4. Being reachable"}
+          {:type "paragraph" :text "We contact you on the phone number you give when ordering to agree the delivery fee and arrange delivery. Please keep that phone available. We may be unable to deliver if we cannot reach you."}
+          {:type "heading" :text "5. Returns"}
+          {:type "paragraph" :text "Our returns rules are set out in the returns and refunds policy, which forms part of these terms."}
+          {:type "heading" :text "6. Your personal data"}
+          {:type "list" :items ["We use your name, phone number, address and optional email to process and deliver your order."
+                                "We keep this information for 6 months after your order is closed, then remove it."
+                                "We do not sell your personal data."]}]}

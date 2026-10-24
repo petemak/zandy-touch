@@ -1,0 +1,88 @@
+;; Versioned migration.
+{:id :0004-orders-schema,
+ :description "Orders, lines, events, acceptance, outbox",
+ :tx-data
+ [#:db{:ident :order/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :order/number,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/value}
+  #:db{:ident :order/status, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :order/placed-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :order/customer-name, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/customer-phone, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/customer-email, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/preferred-contact, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :order/delivery-country, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/delivery-city, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/delivery-area, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/delivery-address-line, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/delivery-directions, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/payment-method, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :order/payment-method-used, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :order/note, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/staff-note, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/delivery-fee, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :order/delivery-fee-set-by, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :order/delivery-fee-set-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :order/cancel-reason, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order/stock-restored?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :order/version, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :order/updated-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :order/idempotency-key,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/value}
+  #:db{:ident :order/lines, :valueType :db.type/ref, :cardinality :db.cardinality/many, :isComponent true}
+  #:db{:ident :order/events, :valueType :db.type/ref, :cardinality :db.cardinality/many, :isComponent true}
+  #:db{:ident :order/acceptance,
+       :valueType :db.type/ref,
+       :cardinality :db.cardinality/one,
+       :isComponent true}
+  #:db{:ident :order-line/product-id, :valueType :db.type/uuid, :cardinality :db.cardinality/one}
+  #:db{:ident :order-line/product-name, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order-line/unit-price, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :order-line/quantity, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :order-line/position, :valueType :db.type/long, :cardinality :db.cardinality/one}
+  #:db{:ident :order-event/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :order-event/status, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :order-event/at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :order-event/note, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :order-event/by, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :acceptance/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :acceptance/policy-type, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :acceptance/policy-version, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :acceptance/content-hash, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :acceptance/accepted-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :acceptance/customer-name, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :acceptance/customer-phone, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :outbox/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :outbox/kind, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :outbox/to, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :outbox/subject, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :outbox/body-text, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :outbox/status, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :outbox/attempts, :valueType :db.type/long, :cardinality :db.cardinality/one, :noHistory true}
+  #:db{:ident :outbox/claimed-by,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :outbox/claimed-at,
+       :valueType :db.type/instant,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :outbox/created-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :outbox/sent-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :outbox/last-error, :valueType :db.type/string, :cardinality :db.cardinality/one}]}

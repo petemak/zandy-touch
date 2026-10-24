@@ -1,0 +1,41 @@
+;; Versioned migration.
+{:id :0006-platform-schema,
+ :description "Rate limits and idempotency keys (operational, no history)",
+ :tx-data
+ [#:db{:ident :ratelimit/key,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :ratelimit/count, :valueType :db.type/long, :cardinality :db.cardinality/one, :noHistory true}
+  #:db{:ident :ratelimit/window-end,
+       :valueType :db.type/instant,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :ratelimit/locked-until,
+       :valueType :db.type/instant,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :idempotency/scoped-key,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :idempotency/body-hash,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :idempotency/state,
+       :valueType :db.type/keyword,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :idempotency/claim-token,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :idempotency/response,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :idempotency/created-at,
+       :valueType :db.type/instant,
+       :cardinality :db.cardinality/one,
+       :noHistory true}]}

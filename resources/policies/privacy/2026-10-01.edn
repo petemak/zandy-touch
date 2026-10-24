@@ -1,0 +1,18 @@
+;; DRAFT placeholder text. Must be reviewed by a human (the owner) before launch.
+{:type "privacy"
+ :version "2026-10-01"
+ :title "Privacy policy"
+ :review-status :placeholder
+ :effective-from #inst "2026-10-01T00:00:00Z"
+ :summary []
+ :blocks [{:type "paragraph" :text "DRAFT TEXT, NOT YET REVIEWED. This is placeholder wording that the shop owner must review before it is used."}
+          {:type "heading" :text "1. What we collect"}
+          {:type "list" :items ["Your name, phone number, delivery address and optional email when you place an order."
+                                "Your email or phone number if you subscribe to news about new arrivals."
+                                "The details you send us through the contact form."]}
+          {:type "heading" :text "2. Why we collect it"}
+          {:type "paragraph" :text "To process and deliver your orders, to answer your messages, and, only if you agree, to tell you about new products."}
+          {:type "heading" :text "3. How long we keep it"}
+          {:type "paragraph" :text "Contact details on orders and contact messages are removed 6 months after the order is closed or the message is received."}
+          {:type "heading" :text "4. Your choices"}
+          {:type "paragraph" :text "You can ask us to remove your information, and you can unsubscribe from news at any time using the link we send. This policy is intended to follow the Uganda Data Protection and Privacy Act, 2019."}]}

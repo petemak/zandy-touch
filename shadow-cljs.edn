@@ -1,0 +1,28 @@
+;; Frontend builds. ClojureScript libraries are listed in :dependencies and
+;; :deps is false, so the root deps.edn (backend) is never consulted.
+;; Keep the versions of replicant and reitit-core equal to ssr/deps.edn
+;; (checked by scripts/check/frontend_deps.clj versions).
+{:deps false
+ :source-paths ["src/shared" "src/frontend" "test/shared" "test/frontend"]
+ :dependencies [[no.cjohansen/replicant "2026.07.1"]
+                [metosin/reitit-core "0.9.1"]
+                [no.cjohansen/portfolio "2026.03.1"]]
+ ;; Portfolio: `npx shadow-cljs watch portfolio`, then open http://localhost:8085
+ ;; (run `bb scripts/build/assets.clj` once first so the CSS and assets exist).
+ :dev-http {8085 ["target/portfolio" "classpath:public"]}
+ :builds
+ {
+  :app {:target :browser
+        :output-dir "target/static/js"
+        :asset-path "/static/js"
+        :modules {:main {:init-fn zandy.frontend.main/init}}
+        :module-hash-names true
+        :compiler-options {:infer-externs :auto}
+        :release {:compiler-options {:optimizations :advanced}}}
+  :portfolio {:target :browser
+              :output-dir "target/portfolio/js"
+              :asset-path "/js"
+              :modules {:main {:init-fn zandy.frontend.scenes.main/init}}}
+  :test {:target :node-test
+         :output-to "target/test/node-tests.js"
+         :ns-regexp "-test$"}}}

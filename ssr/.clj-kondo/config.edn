@@ -1,0 +1,4 @@
+{:config-paths ["../.clj-kondo/imports"]
+ :linters {:unresolved-namespace {:exclude [portfolio.replicant]}
+           :unused-private-var {:level :warning}}
+ :lint-as {portfolio.replicant/defscene clojure.core/def}}

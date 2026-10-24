@@ -1,0 +1,42 @@
+;; Versioned migration.
+{:id :0003-accounts-schema,
+ :description "Staff users, sessions, reset tokens",
+ :tx-data
+ [#:db{:ident :user/id,
+       :valueType :db.type/uuid,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :user/name, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :user/email,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :user/role, :valueType :db.type/keyword, :cardinality :db.cardinality/one}
+  #:db{:ident :user/password-hash, :valueType :db.type/string, :cardinality :db.cardinality/one}
+  #:db{:ident :user/active?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :user/must-change-password?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :user/notify-on-new-order?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :user/created-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :user/last-sign-in-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :session/id-hash,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :session/user, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :session/created-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :session/last-seen-at,
+       :valueType :db.type/instant,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :session/expires-at,
+       :valueType :db.type/instant,
+       :cardinality :db.cardinality/one,
+       :noHistory true}
+  #:db{:ident :session/revoked?, :valueType :db.type/boolean, :cardinality :db.cardinality/one}
+  #:db{:ident :reset-token/token-hash,
+       :valueType :db.type/string,
+       :cardinality :db.cardinality/one,
+       :unique :db.unique/identity}
+  #:db{:ident :reset-token/user, :valueType :db.type/ref, :cardinality :db.cardinality/one}
+  #:db{:ident :reset-token/expires-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}
+  #:db{:ident :reset-token/used-at, :valueType :db.type/instant, :cardinality :db.cardinality/one}]}

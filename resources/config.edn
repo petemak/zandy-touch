@@ -1,0 +1,64 @@
+;; Zandy Touch backend configuration (Aero).
+;; Profiles: :dev (in-memory Datomic, log mailer), :test, :prod (everything from the environment).
+;; Nothing secret lives here: secrets are read with #env and are required in :prod.
+;;
+;; Rate limits (per client IP unless stated). Conservative defaults, all overridable here:
+;;   login           5 failures / 15 min per IP and per email (contract 1.7)
+;;   order-tracking  10 / minute        (contract section 4)
+;;   orders          10 / hour          (default, contract section 13)
+;;   subscriptions   10 / hour
+;;   contact         5 / hour
+;;   reset-request   5 / hour
+;;   unsubscribe     20 / hour
+;; An exceeded limit returns 429 rateLimited with a Retry-After header.
+{:http      {:port #long #or [#env PORT 8080]
+             :host #or [#env HOST "0.0.0.0"]}
+
+ :datomic   {:uri #profile {:dev "datomic:mem://zandy-dev" :test "datomic:mem://zandy-test" :default #env DATOMIC_URI}
+             ;; dev and test apply migrations at boot; prod only verifies the ledger.
+             :auto-migrate? #profile {:dev true :test true :default false}}
+
+ :seed-on-boot? #profile {:dev true :default false}
+
+ :auth      {:session-hmac-secret #or [#env SESSION_HMAC_SECRET nil]
+             :owner-email         #or [#env OWNER_EMAIL nil]
+             :owner-initial-password #or [#env OWNER_INITIAL_PASSWORD nil]}
+
+ :client-ip-header #or [#env CLIENT_IP_HEADER "x-client-ip"]
+
+ :mail      {:impl      #profile {:dev :log :test :log :default :smtp}
+             :host      #or [#env SMTP_HOST "smtp.gmail.com"]
+             :port      #long #or [#env SMTP_PORT 587]
+             :user      #or [#env SMTP_USER nil]
+             :password  #or [#env SMTP_PASSWORD nil]
+             :daily-cap #long #or [#env MAIL_DAILY_CAP 400]}
+
+ :media     {:dir       #or [#env MEDIA_DIR "media"]
+             ;; :vips needs vipsthumbnail and vipsheader on PATH. :stub is only allowed outside :prod.
+             :processor #profile {:dev :stub :test :stub :default :vips}}
+
+ :site      {:base-url      #or [#env SITE_BASE_URL "http://localhost:8081"]
+             :business-name "Zandy Touch"
+             :tagline       "Beauty with Confidence"
+             :phone         #or [#env SITE_PHONE "+256706105779"]
+             :whatsapp      #or [#env WHATSAPP_NUMBER "+256706105779"]
+             :email         #or [#env PUBLIC_EMAIL "sandratonanyonjo@gmail.com"]
+             :shop-address  #or [#env SHOP_ADDRESS "Ring roads, Rubaga Rd, opposite Red Cross, Kampala, Uganda"]
+             :opening-hours [{:days "Monday to Saturday" :opens "08:00" :closes "22:00"}
+                             {:days "Sunday" :opens "10:00" :closes "21:30"}]
+             :social        {:instagram #or [#env SOCIAL_INSTAGRAM nil]
+                             :tiktok    #or [#env SOCIAL_TIKTOK nil]}
+             :countries     [{:code "UG" :name "Uganda"
+                              :cities ["Kampala" "Entebbe" "Jinja" "Mbale" "Mbarara" "Fort Portal"]}]
+             :allow-other-city? false}
+
+ :catalog   {:max-quantity-per-line 10
+             :low-stock-threshold   5}
+
+ :limits    {:login          {:limit 5  :window-ms 900000}
+             :order-tracking {:limit 10 :window-ms 60000}
+             :orders         {:limit 10 :window-ms 3600000}
+             :subscriptions  {:limit 10 :window-ms 3600000}
+             :contact        {:limit 5  :window-ms 3600000}
+             :reset-request  {:limit 5  :window-ms 3600000}
+             :unsubscribe    {:limit 20 :window-ms 3600000}}}

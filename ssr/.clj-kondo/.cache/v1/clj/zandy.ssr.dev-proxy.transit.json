@@ -1,0 +1,1 @@
+["^ ","~$skip",["^ ","~:row",11,"~:col",1,"~:name","^0","~:ns","~$zandy.ssr.dev-proxy","~:top-ns","^5","~:type","~:set"],"~$handler",["^ ","^1",13,"^2",1,"~:fixed-arities",["~#set",[3]],"^3","^9","^4","^5","^6","^5","^7","~:fn"],"~$-main",["^ ","^1",44,"^2",1,"~:varargs-min-arity",0,"^3","^=","^4","^5","^6","^5","^7","^<"],"~:filename","dev/zandy/ssr/dev_proxy.clj"]

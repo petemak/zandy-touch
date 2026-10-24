@@ -111,7 +111,7 @@ SEO: intent = product name plus "Kampala" or "Uganda"; title "{Product name} | {
 ### P6 Checkout `/checkout`
 `noindex`. Title "Checkout | Zandy Touch". One page, numbered sections, no account prompt.
 1. **Your details.** Name, phone, email (optional, "only for an order receipt"), preferred contact (Call or WhatsApp).
-2. **Delivery address.** Country (Uganda), city (select from `GET /api/delivery-areas` plus "Other city, we will confirm"), area, address line, directions or landmark. Helper: "Delivery is available to major cities in Uganda. We will agree the delivery fee with you."
+2. **Delivery address.** Country (Uganda), city (select from `GET /api/delivery-areas`; no free-text city while `allowOtherCity` is false), area, address line, directions or landmark. Helper: "Delivery is available to major cities in Uganda. We will agree the delivery fee with you."
 3. **Payment on delivery.** Radio: Cash or Mobile money. "You pay when your order arrives. Nothing is charged online."
 4. **Order note** (optional).
 5. **Order summary.** Lines, subtotal, "Delivery fee: to be agreed with you", no total including delivery. Link back to the cart.
@@ -298,7 +298,7 @@ The backend seeds the database by versioned migration or seed script so the shop
 
 **Categories (6):** Skincare `skincare`, Perfumes `perfumes`, Body-shaping `body-shaping`, Body care `body-care`, Weight loss `weight-loss`, Health & Wellness `health-and-wellness`. Each has a one or two sentence description and a sort order 1 to 6.
 
-**Delivery cities (placeholder, Q3):** Kampala, Entebbe, Jinja, Mbarara, Gulu, Mbale.
+**Delivery cities (owner decision):** Kampala, Entebbe, Jinja, Mbale, Mbarara, Fort Portal.
 
 **Policies (4, placeholder, `reviewStatus: placeholder`):** `orderTerms`, `termsOfSale`, `privacy`, `returns`, each version `2026-10-01` with a summary where needed and a clearly marked draft body.
 
