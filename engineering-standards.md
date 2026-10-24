@@ -62,9 +62,10 @@ When building application on the Clojure technology stack follow these recommend
 When building Clojure and ClojureScript applications, use the following libraries:
 - `Replicant` (https://github.com/cjohansen/replicant) - rendering library for Clojure/ClojureScript
 - `Pedestal` (https://github.com/pedestal/pedestal) - backend for basic services, APIs and applications
-- `Reitit` (https://github.com/metosin/reitit) - for HTTP routing.
-  If Reitit does not work with the current Pedestal version, use
-  Pedestal's own router on the backend instead of downgrading Pedestal.
+- `Reitit` (https://github.com/metosin/reitit) - for page route
+  matching in the frontend (browser navigation and server-side
+  rendering). The backend does not use Reitit: it uses Pedestal's
+  own router.
 - `Portfolio` (https://github.com/cjohansen/portfolio) - the Storybook-like visual tool for the UI testing
 - `Integrant` (https://github.com/weavejester/integrant) - for component management
 - `Aero` (https://github.com/juxt/aero) - for application for configuration
@@ -74,9 +75,9 @@ When building Clojure and ClojureScript applications, use the following librarie
 - `babashka` (https://babashka.org) - great tool to write scripts in Clojure
 
 ## Technology restrictions
-- Frontend: ClojureScript, Replicant, Portfolio, shadow-cljs
-- Backend: Clojure, Integrant, Aero, Pedestal, Reitit, Malli,
-  Datomic
+- Frontend: ClojureScript, Replicant, Portfolio, shadow-cljs, Reitit
+- Backend: Clojure, Integrant, Aero, Pedestal (including its
+  router), Malli, Datomic
 - Not allowed: Reagent, re-frame, Rum, Compojure, ring-jetty,
   Mount, environ, Plumatic Schema, SQL databases for application data
 - The libraries named above are required: use each one for its

@@ -10,7 +10,7 @@ Constraints carried through: guest checkout only; cash or mobile money on delive
 - Categories (six, final): Skincare, Perfumes, Body-shaping, Body care, Weight loss, Health & Wellness. Dietary supplements and the weight-gain porridge are in Health & Wellness. There is no Bedroom category anywhere in navigation, icons, copy or seed data.
 - Topology and rendering: the frontend server renders public pages on the server (SSR) from the same Replicant views the browser uses, so title, meta, canonical and JSON-LD are in the first HTML. It reads data only through the backend HTTP API (api-contract.md section 12), never Datomic. The browser hydrates, reusing the embedded data. Cart, checkout, order-placed, track-order, unsubscribe and all admin pages are a `noindex` document shell rendered in the browser. The frontend owns `robots.txt` and `sitemap.xml` (built from `GET /api/sitemap-entries`), which are blocked on staging.
 - Caching of rendered pages (frontend server and CDN), kept close to the API lifetimes so stock staleness stays bounded:
-  - Home, shop, category, product: `public, s-maxage=60, stale-while-revalidate=120`, browser `max-age=0`. Never cache an error or 503 response.
+  - Home, shop, category, product: `public, s-maxage=60, stale-while-revalidate=30`, browser `max-age=0` (at most about 90 seconds old; owner decision). Never cache an error or 503 response.
   - About, contact, delivery and payment, legal pages: `public, s-maxage=600, stale-while-revalidate=600`.
   - Document shells (cart, checkout, order-placed, track-order, admin): `no-cache` with an ETag. Fingerprinted JS and CSS: one year, immutable.
   - Stock is shown on cached pages, so the product page re-checks its product from the API on load (a revalidating request) and updates "Add to cart" and the quantity limit if the stock changed. The cart and checkout always validate against the live server. A cached page is a hint; the order endpoint is the authority.
@@ -19,7 +19,7 @@ Constraints carried through: guest checkout only; cash or mobile money on delive
 - Tone: calm and warm, no exclamation marks, no medical or guarantee claims (Q2). Product copy comes from the owner as plain text.
 - Placeholder policies: while a policy document's `reviewStatus` is `placeholder`, its page, and the order-terms panel in checkout, show a visible notice "Draft text, not yet reviewed". It disappears when the document is approved. This keeps unreviewed text from going live unnoticed.
 - Accessibility: gold on black passes for text, gold on ivory does not (use black text on ivory, gold only for large elements or borders). Visible focus ring, 44px touch targets, labels on every field, an error summary on long forms, alt text on every product image, no information by colour alone, reduced-motion respected, `aria-live` for cart and stock changes.
-- Route rule (Reitit, frontend): no static route beside a `{param}` route at the same position. Hence `/categories/{slug}`, `/products/{slug}`, `/admin/new-product` with `/admin/products/{id}` (not `/admin/products/new`). All `/legal/*` routes are static siblings with no parameter.
+- Route rule (frontend page routes, Reitit): no static route beside a `{param}` route at the same position. Hence `/categories/{slug}`, `/products/{slug}`, `/admin/new-product` with `/admin/products/{id}` (not `/admin/products/new`). All `/legal/*` routes are static siblings with no parameter.
 
 ## 1. Page list
 
@@ -340,22 +340,20 @@ Rules for the seed:
 
 ## 10. Open questions for the owner
 
-Closed by business-context.md and therefore removed: porridge category (Health & Wellness), Bedroom (no such category), whether product prices are negotiable (they are not; only delivery is), counted stock (yes), staff-entered orders (no), sender and alert email (the owner email).
-
-Still open:
-- **Q1. WhatsApp number.** Is the WhatsApp number the same as +256706105779? Until confirmed, the WhatsApp buttons are hidden.
-- **Q2. Product claims.** Which claims can you support (skin brightening, weight results, "natural and organic")? Until answered, copy is limited to what you provide and no guarantee wording is added.
-- **Q3. Delivery cities and timing.** Which cities exactly, usual delivery times, and what about "Other city"?
-- **Q4. Policy content.** The four policy texts are placeholders. Who reviews them before launch, and what are your actual rules for returns, exchanges and cancelling before dispatch? The site will not go live with placeholder texts.
-- **Q5. Shop and webshop stock.** Is the physical shop's stock the same pool as the webshop's? If yes, staff must record walk-in sales as stock adjustments (reason "shop sale"), or the webshop can oversell what the shop already sold. Who enters the opening stock counts?
-- **Q6. Cancel after dispatch.** Cancelling before dispatch returns stock automatically. If an order is cancelled after "Approve delivery" (customer refuses on arrival), the design leaves stock unchanged and asks staff to adjust it by hand when the goods are back. Is that right?
-- **Q7. Changing an order.** If a customer agrees by phone to change quantities, staff cancel the order (stock returns) and the customer reorders. Acceptable, or should staff be able to edit order lines?
-- **Q8. Customer email.** Is an optional email field with a receipt only (no later status emails) acceptable?
-- **Q9. Sale prices.** Do you want "was / now" prices and a Sale badge? Not in v1 unless you say so.
-- **Q10. Shop address and opening hours** for Contact and About.
-- **Q11. Public email.** The owner email is the sender and receives order alerts. May it also be shown publicly, or should a business address be used?
-- **Q12. Social accounts** to link in the footer.
-- **Q13. "Zandy Luxe" and other brands.** Is Zandy Luxe a separate brand or retired? Should third-party brands be sold alongside own-brand products (own brand given priority)?
-- **Q14. Sending email from the owner's Gmail address.** This needs an app password (supplied by you as a secret, not in code). Mail from a personal Gmail address through a site can land in spam and has sending limits; that is fine at launch volumes, and a cheap transactional provider with the zandytouch.com domain can replace it later. Agreed?
-- **Q15. Stock thresholds.** "Low stock" is 5 or fewer in the admin, and the most one customer can order per product line is 10. Are those right?
-- **Hosting (for the build team).** Frontend server, backend server and Datomic within 15 USD/month: size and provider are to be confirmed by backend and devops. The single public origin with edge routing (api-contract.md section 1.1) is for the architect to confirm.
+All answered by the owner on 25 October 2026; the answers are in business-context.md, "Owner decisions". In short:
+- Q1 WhatsApp: same number as the phone. Show the WhatsApp buttons.
+- Q2 Claims: none. Copy makes no brightening, weight or "natural and organic" claims.
+- Q3 Delivery cities: Kampala, Entebbe, Jinja, Mbale, Mbarara, Fort Portal. Delivery time and fee are agreed when the order is confirmed. Other cities: not offered in the checkout; the delivery page invites a WhatsApp enquiry.
+- Q4 Policies: placeholders until the owner reviews and approves each text; the launch gate stays.
+- Q5 Stock: one shared pool with the physical shop; walk-in sales are recorded as stock adjustments (reason "shopSale"). Staff enter opening counts.
+- Q6 Cancel after dispatch: stock unchanged; staff adjust by hand. As designed.
+- Q7 Changing an order: cancel and reorder. As designed.
+- Q8 Customer email: optional, receipt only. As designed.
+- Q9 Sale prices: not in v1.
+- Q10 Shop: Ring roads, Rubaga Rd, opposite Red Cross, Kampala. Monday to Saturday 8:00 AM – 10:00 PM, Sunday 10:00 AM – 9:30 PM.
+- Q11 Public email: the owner email may be shown publicly.
+- Q12 Social: Instagram and TikTok placeholders only, links added later (hidden while empty).
+- Q13 Brands: Zandy Luxe is Zandy Touch, not a separate brand. Third-party brands are sold alongside own-brand products.
+- Q14 Gmail sending: accepted.
+- Q15 Thresholds: low stock at 5 or fewer; at most 10 per product line.
+- Data retention (new): customer contact details on orders and contact messages are removed 6 months after the order is closed or the message received.

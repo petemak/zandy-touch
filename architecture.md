@@ -1,13 +1,13 @@
 # Architecture: Zandy Touch
 
-Inputs read in full: engineering-standards.md (including "Deployment topology" and the Reitit fallback), business-context.md, brand-brief.md, scope-checklist.md, design-spec.md, user-journeys.md, api-contract.md, visual-guide.md (section 11 and the seed image section), and the agent definitions in .claude/agents/. design-tokens.css (font paths only) and the assets/ layout were skimmed. Research date: 24 October 2026. This file replaces the earlier single-service design.
+Inputs read in full: engineering-standards.md (including "Deployment topology" and the routing libraries), business-context.md, brand-brief.md, scope-checklist.md, design-spec.md, user-journeys.md, api-contract.md, visual-guide.md (section 11 and the seed image section), and the agent definitions in .claude/agents/. design-tokens.css (font paths only) and the assets/ layout were skimmed. Research date: 24 October 2026. This file replaces the earlier single-service design.
 
 Summary:
 1. Two stateless web processes and one datastore. `ssr` (frontend server, JVM Clojure, Pedestal, `replicant.string`) renders public pages from views shared with the browser bundle and reads data only through the backend HTTP API. `backend` (Pedestal, Datomic peer) owns all data and business rules and serves no HTML. One Datomic transactor with dev storage.
 2. One public origin. An edge proxy routes `/api/*` and `/media/*` to the backend and everything else to `ssr`. A CDN in front caches by the Cache-Control headers each server sends. The proxy, CDN, provider and domain are deployment choices (section 8 and deployment-handover.md).
 3. Every piece of shared state (sessions, rate limits, idempotency keys, stock, the email outbox) lives in Datomic, so any number of `backend` and `ssr` instances can run. Launch runs one of each; the memory budget per process is in D3 and what deployment must provide is in section 8.
 4. Two builders with disjoint trees: backend-clojure (`src/backend`, root `deps.edn`) and frontend-cljs (`ssr/`, `src/frontend`, `src/shared`). Their only interface is api-contract.md.
-5. Reitit with Pedestal is a time-boxed spike; the documented fallback is Pedestal 0.8's own router. Pedestal is never downgraded.
+5. The backend routes with Pedestal 0.8's own router (owner decision, D6). Reitit is used only in the frontend for page route matching.
 
 ---
 
@@ -23,7 +23,7 @@ From the categories marked "applies" in scope-checklist.md:
 - Notifications: email only, from and to the owner's Gmail address (business-context.md), optional customer receipt.
 - Legal: four versioned policy documents with `reviewStatus`, and a launch gate that blocks indexing while any is a placeholder.
 
-From engineering-standards.md: separate frontend and backend servers, SSR from shared Replicant views, both servers able to run several instances, shared state in the backend database, Datomic dev storage plus off-site backups accepted, 15 USD per month total; non-negotiable rules (server-side validation and authorization, no hardcoded secrets, versioned migrations, idempotent mutations, no micro-frontends); WCAG 2.1 AA; Integrant, Aero, Malli, Pedestal, Reitit (fallback allowed), Datomic.
+From engineering-standards.md: separate frontend and backend servers, SSR from shared Replicant views, both servers able to run several instances, shared state in the backend database, Datomic dev storage plus off-site backups accepted, 15 USD per month total; non-negotiable rules (server-side validation and authorization, no hardcoded secrets, versioned migrations, idempotent mutations, no micro-frontends); WCAG 2.1 AA; Integrant, Aero, Malli, Pedestal (backend routing with its own router), Reitit (frontend route matching only), Datomic.
 
 ### Constraints that shape everything else
 | Constraint | Source | Consequence |
@@ -225,7 +225,7 @@ Notes:
 - Order totals are derived, never stored. `availability` and `maxQuantity` are derived from `stock-quantity` and `maxQuantityPerLine`. The low-stock threshold (5) and per-line maximum (10) come from config (design-spec Q15).
 - Policies are data in Datomic, loaded by migrations from `resources/policies/<type>/<version>.edn` (blocks as data, so no markdown parser exists anywhere). Approving a text after human review is a new migration that sets `review-status` to `approved`; a changed text is a new version with a new hash.
 - Search is in-memory substring filtering of the published set in `catalog.logic` (a few hundred products; Datomic fulltext would give whole-word semantics that do not match the contract).
-- Data protection: Datomic keeps history, so erasure requests use excision, documented in a runbook by backend-clojure (open question Q9).
+- Data retention (owner decision, Q9): customer personal data is kept for 6 months. A daily retention job in `orders` and `engagement` excises (Datomic `:db/excise`) the customer name, phone, email, address and directions of orders closed (delivered or cancelled) more than 6 months ago, the matching `acceptance` name and phone, and contact messages received more than 6 months ago. Order numbers, lines, totals and status history stay for the books. Retraction is not enough because Datomic keeps history. The job is idempotent and safe on several instances. Excision is heavy on the transactor, so it runs in small batches at night. Check: `clojure -M:test -n zandy.retention-test` **(backend-clojure)** shows the attributes gone from `d/history` after the job.
 
 ### 3.3 Versioned migrations with Datomic
 - Files `resources/migrations/NNNN-description.edn`, each `{:id :description :tx-data [...]}` or `{:id ... :fn ...}` for data changes. Db functions (transaction functions) are installed by migrations from `resources/migrations/dbfns/*.clj` and use only `clojure.core`, because the transactor runs them.
@@ -234,7 +234,7 @@ Notes:
 - Schema is defined nowhere else. The same runner builds `datomic:mem` in every test.
 
 ### 3.4 Where files live
-- Photos: `MEDIA_DIR` on the server disk through the `MediaStore` protocol. `originals/` private, `public/{photoId}-{thumb|medium|large}.webp` public. Several backend instances on the same host share the directory. A backend instance on another host needs the `s3` implementation (PE5).
+- Photos: `MEDIA_DIR` on the server disk through the `MediaStore` protocol. `public/{photoId}-{thumb|medium|large}.webp` public. The uploaded original is deleted once the variants are written (owner decision, Q5). Several backend instances on the same host share the directory. A backend instance on another host needs the `s3` implementation (PE5).
 - Seed images and manifest: `resources/seed/images/` (files `seed-<sku>-<n>.jpg`) with `resources/seed/images/manifest.edn` (machine-readable: file, sku, alt, source URL, author, licence, date retrieved) and `resources/seed/images/SOURCES.md` (human-readable view of the same facts). Owner: backend-clojure, who sources the images (CC0 or public domain only, per visual-guide.md "Seed images"). `clojure -M:seed` (alias in the root `deps.edn`, code in `src/backend/zandy/seed/`) is idempotent by SKU, writes the 22 published products and 1 draft of design-spec.md section 9 through the same `catalog` and `photos` functions the API uses, stores the images through `MediaStore` marked `seed? true`, and writes `initial` stock movements. It is run on staging and, before launch, on production (so the shop is browsable), and the launch gate removes it. Seed data contains no secrets.
 - Static files (bundle, CSS, fonts, icons, logo): `STATIC_DIR` on the `ssr` host (4.2). Policy texts: `resources/policies/`.
 - Everything else lives in Datomic.
@@ -315,7 +315,7 @@ Chosen: `ssr`, `backend`, one transactor. No queue, cache server, search engine 
 **Frontend server runtime: a small JVM Clojure service** (Pedestal 0.8 + `replicant.string` + Reitit data matching), owned by frontend-cljs.
 - Why: it renders the same `.cljc` views the browser uses, it is the one runtime the project already needs (the backend is a JVM), tooling is one `clojure` command, the dependencies are all on the required list, and the JDK's own HTTP client covers the API calls. Cost: about 0.4 to 0.5 GB of RAM per instance.
 - Rejected: Node SSR from the ClojureScript build (second runtime on the server; a Node process is cheaper in RAM, so this is the fallback if memory ever binds; the views are shared code either way); a static prerender at build time (product pages change daily and prices and stock must be current); a headless-browser prerender service (extra service and cost); client-only rendering with tags set after load (fails the SEO rule in the first HTML); Datomic access from the frontend server (forbidden by the standards, and it would make the contract meaningless).
-- Standards check: Pedestal is listed for "basic services"; Datomic is not used here. Treated as consistent; confirm in Q10.
+- Standards check: Pedestal is listed for "basic services"; Datomic is not used here. Confirmed by the owner (Q10): the frontend server is separate from the backend service, serves the ClojureScript/Replicant app and renders public pages.
 
 **Origin routing: one public origin, routed by an edge proxy.**
 - Rule: `/api/*` and `/media/*` to the backend; everything else to `ssr`. api-contract.md assumed one origin; confirmed.
@@ -327,7 +327,7 @@ The application states its caching through headers; the CDN only honours them. W
 
 | Response | Sent by | Cache-Control |
 |---|---|---|
-| Home, shop, category, product pages | `ssr` | `public, max-age=0, s-maxage=60, stale-while-revalidate=120, stale-if-error=86400` (see conflict below) |
+| Home, shop, category, product pages | `ssr` | `public, max-age=0, s-maxage=60, stale-while-revalidate=30, stale-if-error=86400` (about 90 seconds at most, Q6) |
 | About, contact, delivery, legal | `ssr` | `public, max-age=0, s-maxage=600, stale-while-revalidate=600, stale-if-error=86400` |
 | Document shells (cart, checkout, order-placed, track-order, unsubscribe, admin) | `ssr` | `no-cache` with ETag |
 | 404 page | `ssr` | `public, max-age=0, s-maxage=60` (a 404 for an unknown product may become valid) |
@@ -339,7 +339,7 @@ The application states its caching through headers; the CDN only honours them. W
 | `/api/healthz`, `/healthz`, everything private | both | `no-store` |
 Added value: `stale-if-error` lets the CDN keep serving catalogue pages for a day while the backend or `ssr` is down or restarting (a proposed addition to design-spec.md section 0).
 
-Conflict, flagged and not resolved: design-spec.md section 0 gives HTML `s-maxage=60, stale-while-revalidate=120`, which allows a page up to about 180 seconds old, while user-journeys.md and api-contract.md section 1.5 promise "about 90 seconds". The lifetimes are configuration (`PAGE_CACHE_*`), so the default follows design-spec.md until the owner or ux-designer decides; my recommendation is `s-maxage=60, stale-while-revalidate=30` (Q6). Also: `ssr` fetches from the backend internally, not through the CDN, so what is cached is current as of the render.
+Page staleness (Q6, owner decision): catalogue pages may be at most about 90 seconds old (`s-maxage=60, stale-while-revalidate=30`), matching user-journeys.md and api-contract.md section 1.5; design-spec.md section 0 is updated to match. The lifetimes stay configuration (`PAGE_CACHE_*`). `ssr` fetches from the backend internally, not through the CDN, so what is cached is current as of the render.
 
 ### D3. Runtime footprint and Datomic layout
 The application is designed so that everything can run on one small server at launch and within the 15 USD ceiling. Which server, provider and plan is a deployment decision (section 8).
@@ -373,15 +373,15 @@ Rejected: in-memory rate limits (multiply by instance count, reset on restart); 
 ### D5. Image resizing with the libvips CLI
 Unchanged from the earlier design: `vipsthumbnail` and `vipsheader` from `platform.media` (libvips is actively maintained; it streams, so memory stays low; the exact WebP strip option is tested in B17). Rejected: JVM libraries that are archived, native-only for x86 or unproven (`webp-imageio`, `webp4j`), and Thumbnailator (no WebP writer). Installed as the OS package in `Dockerfile.backend`.
 
-### D6. Reitit with Pedestal: spike and fallback (backend)
-What I checked: Pedestal 0.8.x is current (0.8.1 stable, 0.8.2 betas). Its release notes say 0.8 introduced connectors replacing the service map, a default Sawtooth router that prefers literal paths over parameters and reports conflicts, and that "in theory you can swap out routing in 0.8, in practice 0.8 binds routing a little tighter than before" (routing now also serves WebSocket upgrades and asset requests). Pedestal's docs allow a custom router. The reitit-pedestal documentation (0.9.1) still shows examples with Pedestal 0.5.5 and `replace-last-interceptor`, and I found no 2026 compatibility statement.
-Decision for the backend spike (backend-clojure's first task, time-boxed to one session):
-1. Each slice's `routes.clj` defines routes as plain data (method, path, name, `:access`, Malli `:parameters`, `:idempotent?`, cache policy, handler). `platform.http/route-table` returns this normalised table. All fitness checks (N1, N2, B9, R2) read that table, so they pass under either router.
-2. Spike: serve that table through Reitit (via the Pedestal 0.8 custom `:router` option) with Pedestal 0.8's interceptors, error handling and a request-id interceptor. Pass means: path and query matching, 404 and 405 handled by `platform.errors`, and the `:access` data visible to the interceptor.
-3. **Fallback if the spike fails: Pedestal 0.8's own router (Sawtooth, table syntax) fed from the same table, with a small Malli validation interceptor in `platform.http`. Do not downgrade Pedestal.** The contract's route rule (no static sibling beside a `{param}` route) stays as written: Sawtooth would tolerate such siblings, but the rule costs nothing and keeps the router swappable.
-4. backend-clojure records the outcome and the reason in a comment at the top of `platform.http` and tells the architect, who updates this decision.
-Frontend: `shared.routes` stays Reitit data (matching only, no Pedestal integration), so it is not affected by the spike.
-Rejected: downgrading Pedestal (forbidden by the standards); swapping to ring-based Reitit (not allowed).
+### D6. Backend routing: Pedestal's own router (owner decision)
+The owner waived Reitit on the backend: the backend uses Pedestal 0.8's own router (Sawtooth, the default), which removes the Reitit-Pedestal integration risk and one dependency.
+1. Each slice's `routes.clj` defines routes as plain data (method, path, name, `:access`, Malli `:parameters`, `:idempotent?`, cache policy, handler). `platform.http/route-table` returns this normalised table and turns it into Pedestal table routes. All fitness checks (N1, N2, B9, R2) read that table.
+2. Request validation and coercion are done by a small Malli interceptor in `platform.http`, driven by the route data. JSON via muuntaja/jsonista (D11).
+3. 404 and 405 are produced by `platform.errors` in the standard error shape.
+4. The contract's route rule (no static sibling beside a `{param}` route) stays: Sawtooth would tolerate such siblings and prefers literal paths, but the rule costs nothing and keeps the API predictable.
+5. No backend spike is needed for routing. The backend's first task is the Datomic migrations plus the `place-order` transaction with its concurrency test (B24).
+Frontend: `shared.routes` stays Reitit data (`reitit-core`, matching only, no Pedestal integration), used by `ssr.http` and the browser router, as engineering-standards.md now states.
+Rejected: Reitit on the backend (owner decision; its Pedestal integration documentation targets Pedestal 0.5); downgrading Pedestal (forbidden by the standards).
 
 ### D7. Email through Gmail SMTP
 Design: `Mailer` protocol; SMTP implementation with Angus Mail to `smtp.gmail.com`, port 465 (SSL) or 587 (STARTTLS), username = `OWNER_EMAIL`, password = a Google **app password** (`SMTP_PASSWORD`), `From` = `OWNER_EMAIL`. Alerts go to the same address.
@@ -403,7 +403,7 @@ Standards suggest `src/features/<slice>/`. Backend slices are `src/backend/zandy
 Each server is built into its own image. Backend deploy: run `clojure -M:migrate` against the target database, then restart instances one at a time. `ssr` deploy: add the new static files to `STATIC_DIR`, then restart instances one at a time. Migrations are additive, so the previous backend image still works against the new schema for one release, which gives a rollback path.
 
 ### D11. Extra libraries (policy: named, one line each; no approval list)
-Required libraries are used for their stated purpose: Replicant (views and string rendering), Pedestal (both servers), Reitit (backend routing unless D6 falls back; shared route table and client navigation), Integrant, Aero, Malli, Datomic Pro peer, Portfolio, shadow-cljs, Cognitect test-runner, babashka. Additional:
+Required libraries are used for their stated purpose: Replicant (views and string rendering), Pedestal (both servers), Reitit (frontend only: shared page route table, SSR matching and client navigation; the backend uses Pedestal's router, D6), Integrant, Aero, Malli, Datomic Pro peer, Portfolio, shadow-cljs, Cognitect test-runner, babashka. Additional:
 | Library | Why |
 |---|---|
 | `metosin/muuntaja` + `jsonista` | JSON encoding and decoding (the `ssr` API client also uses `jsonista`). |
@@ -465,7 +465,7 @@ Conventions: run from the project root. Tools assumed on the machine: `rg` (ripg
 | # | Rule | Check | Pass |
 |---|---|---|---|
 | R2 | Cache headers match section 6 D2 and the contract | `scripts/ops/check-cache-headers.sh <base-url>` **(deployment-engineer, run on staging)**: requests each row of the D2 table and the api-contract.md 1.5 table, compares `Cache-Control`, and asserts that cacheable responses have no `Set-Cookie` and no `Vary: Cookie`, that private and error responses are `no-store`, and that a stopped backend yields an `ssr` 503 with `no-store`. | exit 0 |
-| R3 | Pedestal not downgraded; router recorded | `rg -n 'io.pedestal/[^ ]+ \{:mvn/version "0\.[0-7]\.' deps.edn ssr/deps.edn` no output; `clojure -M:test -n zandy.platform.http-test` **(backend-clojure)** passes with the router chosen in D6. | no output; 0 failures |
+| R3 | Pedestal not downgraded; router recorded | `rg -n 'io.pedestal/[^ ]+ \{:mvn/version "0\.[0-7]\.' deps.edn ssr/deps.edn` no output; `clojure -M:test -n zandy.platform.http-test` **(backend-clojure)** passes with Pedestal's router (D6); `rg -n 'reitit' deps.edn src/backend` prints nothing. | no output; 0 failures |
 | R4 | No shared in-process state | `rg -n '^\(def(once)?\s+\S+\s+\(atom' src/backend ssr/src` no output; `rg -n '\(atom\b\|ConcurrentHashMap' src/backend/zandy/platform/rate_limit.clj src/backend/zandy/platform/idempotency.clj src/backend/zandy/features/accounts src/backend/zandy/features/notifications` no output. | no output |
 | R5 | Two instances of each server work together | `scripts/ops/two-instance-smoke.sh` **(deployment-engineer, run on staging)** starts two `backend` instances (8080, 8090) on one transactor and two `ssr` instances (8081, 8082) behind a local test proxy, then: logs in on A and reads `/api/auth/sessions/current` on B immediately; places an order on A with key K and replays on B (`Idempotent-Replayed: true`, one order); exhausts a login rate limit on A and sees 429 on B; checks exactly one send per outbox message with the log mailer; confirms both `ssr` instances return identical HTML for the same URL. | exit 0 |
 | R9 | Email configuration | `clojure -M:test -n zandy.platform.config-test` **(backend-clojure)**: the prod profile fails without `OWNER_EMAIL`, `SMTP_USER`, `SMTP_PASSWORD`; `From` equals `OWNER_EMAIL`; the daily cap is applied. `clojure -M:send-test-mail` (alias in root `deps.edn`, **backend-clojure**) sends one message to `OWNER_EMAIL`; qa runs it only when the owner has supplied the app password. | 0 failures; message received |
@@ -503,21 +503,16 @@ Acceptance checks that deployment-engineer writes and runs (moved here from sect
 
 Deployment choices (provider, plan, domain, CDN account, backup destination, payment method, staging placement) are asked at the deployment stage; see deployment-handover.md.
 
-Q3. Gmail as the sender (owner decision; D7). Accept the 500-recipient-a-day limit, the Gmail address shown to customers, possible spam-folder placement of receipts, and the rule that a Google password change ends the app password? May the Gmail address also be shown publicly (design-spec Q11)?
+All application questions are answered (owner, 25 October 2026):
+- Q3 Gmail as sender: accepted, and the address may be shown publicly.
+- Q5 Photos stay on the server disk for launch (PE5 accepted); originals are deleted after the variants exist.
+- Q6 About 90 seconds for catalogue pages; `stale-if-error` of a day approved.
+- Q7 Logo and icons cached for 1 day (PE3 accepted).
+- Q8 Policy texts are reviewed by the owner; the launch gate stays.
+- Q9 Customer personal data kept 6 months, then excised (section 3.2 notes).
+- Q10 The frontend server is a separate service serving the ClojureScript/Replicant app.
 
-Q5. Photos on the server disk only (PE5). Several backend instances share it on one machine; a second backend host needs object storage. Accept this limit for launch? Keep original uploads (about 2.5 GB for 500 photos at 5 MB), or delete them after the variants exist?
-
-Q6. Page staleness. design-spec.md section 0 allows catalogue pages to be up to about 180 seconds old; user-journeys.md and api-contract.md say about 90 seconds. I recommend `s-maxage=60, stale-while-revalidate=30`. Which one? Also approve `stale-if-error` (a day) so a backend restart or outage does not blank the shop.
-
-Q7. Logo and icon cache lifetime (PE3). visual-guide.md suggests one-year immutable caching for logo, icons and badges, but their file names are not versioned and you will supply a vector logo to replace the recreation, so I set one day. Agree?
-
-Q8. Policy texts. The four texts must be supplied and reviewed by a person; the shop's frontend server refuses to start with indexing on while any is a placeholder. Who writes and reviews them?
-
-Q9. Data retention and erasure. Datomic keeps history; a deletion request needs excision. Do you want a retention rule (for example removing order contact details after a period)?
-
-Q10. Frontend server on the JVM. The standards list Pedestal for "basic services" and ClojureScript/shadow-cljs for the frontend; I read "frontend server" as a small Clojure service that uses no Datomic. Confirm that reading.
-
-Existing design-spec.md questions Q1 to Q15 remain open and are not resolved here. Q14 (Gmail) is answered in design by D7.
+design-spec.md questions Q1 to Q15 are answered too (design-spec.md section 10, business-context.md "Owner decisions").
 
 ---
 
@@ -552,6 +547,6 @@ Nothing departs from a non-negotiable rule.
 - PE1. Source layout: `src/backend/zandy/features/<slice>/`, a separate `ssr/` project, `src/frontend`, `src/shared` instead of `src/features/<slice>/` (guideline; reason in D9).
 - PE2. `error.details` on three error codes (guideline; D8).
 - PE3. Logo, icons and badges cached for one day instead of the one-year immutable lifetime suggested in visual-guide.md section 11, because the names are not versioned and the logo is due to be replaced.
-- PE4. Interpretation, to confirm: the frontend server is JVM Clojure with Pedestal, within the "basic services" use of Pedestal and without Datomic (Q10).
+- PE4. Confirmed by the owner (Q10): the frontend server is a separate JVM Clojure service with Pedestal and no Datomic.
 - PE5. Partial exception to owner decision 2: backend instances can share photos only on the same host (`MediaStore` `local`). Running a backend on a second host requires the `s3` implementation and an object-storage account (Q5). Reason: an object store needs a payment card and extra code that no stated requirement needs at launch.
 - Not exceptions but vendor guidance: Datomic dev storage in production (accepted by the owner); a single transactor remains a single point of failure.

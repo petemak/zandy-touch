@@ -3,7 +3,7 @@
   {reagent.core       {:message "Use Replicant"}
    re-frame.core      {:message "Use Replicant; handlers are data"}
    rum.core           {:message "Use Replicant"}
-   compojure.core     {:message "Use Reitit"}
+   compojure.core     {:message "Use Pedestal routing (backend) or Reitit (frontend)"}
    mount.core         {:message "Use Integrant"}
    environ.core       {:message "Use Aero"}
    schema.core        {:message "Use Malli"}
