@@ -60,8 +60,12 @@ When building Clojure and ClojureScript applications, use the following librarie
   Pedestal, Datomic
 - Not allowed: Reagent, re-frame, Rum, Compojure, ring-jetty,
   Mount, environ, Plumatic Schema, SQL databases for application data
-- Any library not named above needs the owner's approval first.
-  Stop and ask; do not add it.
+- The libraries named above are required: use each one for its
+  stated purpose and do not replace it with an alternative.
+  Other libraries may be added without approval, provided they
+  are actively maintained, do not duplicate the purpose of a
+  required library, and are not in the "Not allowed" list. Name
+  each added library and give one line on why in your summary.
 - One error response shape across every endpoint:
   { error: { code, message } }
 - camelCase keys, ISO 8601 dates, consistently across all JSON

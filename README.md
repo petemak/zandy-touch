@@ -17,13 +17,54 @@ A team of 5 agents starting from a branding expert to the deploymwnt engineer wa
 - QA engineer
 - Deployment Engineer
 
+
+### The agents
+.claude
+├── agents
+│   ├── architect.md
+│   ├── backend-clojure.md
+│   ├── backend-node.md
+│   ├── brand-strategist.md
+│   ├── deployment-engineer.md
+│   ├── frontend-cljs.md
+│   ├── frontend-html.md
+│   ├── qa.md
+│   ├── ux-designer.md
+│   └── visual-designer.md
+└── settings.json
+
+
+### Supporting files
+.
+├── business
+│   └── images
+│       ├── logo
+│       └── products
+│           ├── assortment-perfumes.jpeg
+│           ├── beauty-milk.jpeg
+│           ├── dietary-supplements-magnesium-complex.jpeg
+│           ├── gluta-koji-soap.jpeg
+│           ├── slimma-sleaming-tea.jpeg
+│           ├── zandy-brighter-glow-cream.jpeg
+│           ├── Zandy-brigtening-cream.jpeg
+│           └── zandy-weight-gain-porridge.jpg
+├── business-context.md
+├── engineering-standards.md
+├── README.md
+└── scripts
+    ├── allowed-deps.edn
+    └── check_deps.clj
+
+
+
+
 ## Kicking off the website creation
 Since we have a team of agents, we just need a prompt to kick off work. The business idea does not need to be specified in the prompt.
 The agents are designed to read the business idea from the _business-context.md_ file if provided.
 
 
 
-### Evals
+## Evals
 Build a small, fixed prompt set, See  eval-prompts.md 
 
 

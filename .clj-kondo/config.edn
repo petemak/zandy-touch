@@ -1,0 +1,11 @@
+{:linters
+ {:discouraged-namespace
+  {reagent.core       {:message "Use Replicant"}
+   re-frame.core      {:message "Use Replicant; handlers are data"}
+   rum.core           {:message "Use Replicant"}
+   compojure.core     {:message "Use Reitit"}
+   mount.core         {:message "Use Integrant"}
+   environ.core       {:message "Use Aero"}
+   schema.core        {:message "Use Malli"}
+   clojure.spec.alpha {:message "Use Malli for validation"}
+   ring.adapter.jetty {:message "Pedestal runs the server"}}}}

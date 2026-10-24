@@ -21,8 +21,8 @@ node_modules/
 .shadow-cljs/
 resources/public/js/compiled/
 public/js/
-package-lock.json
-.clj-kondo/
+# package-lock.json
+# .clj-kondo/
 .lsp/
 
 # --- Editors / REPL tooling ---
