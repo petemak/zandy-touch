@@ -18,7 +18,7 @@ From the categories marked "applies" in scope-checklist.md:
 - Catalog and inventory: six seeded categories, products with up to 6 photos, counted stock that cannot oversell, logged stock movements, archive instead of delete, bulk photo upload with SKU matching, seed sample products with CC0 images.
 - Checkout (reduced form): guest order, cash or mobile money on delivery, no gateway, delivery fee recorded by staff later, explicit server-recorded acceptance of the versioned order terms, all in one atomic transaction.
 - Accounts for staff only: owner and support, owner manages support accounts, password change, owner password reset by email.
-- Back-office: orders (confirm, approve delivery, deliver, cancel with stock restore), products, stock, photos, contact messages, subscribers export.
+- Back-office: orders (confirm, approve delivery, deliver, cancel with stock restore), products, stock, bulk product import (CSV plus SKU-named pictures, imported as drafts, then bulk publish), contact messages, subscribers export.
 - Search: category browse, substring text search, sort, availability filter.
 - Notifications: email only, from and to the owner's Gmail address (business-context.md), optional customer receipt.
 - Legal: four versioned policy documents with `reviewStatus`, and a launch gate that blocks indexing while any is a placeholder.
@@ -84,8 +84,8 @@ Feature slices (`zandy.features.<slice>`), each with `api.clj` (the only namespa
 | Slice | Responsibility | Contract |
 |---|---|---|
 | `site` | Business info and delivery areas from config. | 2 |
-| `catalog` | Categories, products, product images, the photo entity, stock quantity and stock movements (public and staff product endpoints, stock adjustment and history, photo assignment, search/sort, sitemap entries). Owns `:category/*`, `:product/*`, `:product-image/*`, `:photo/*`, `:stock-movement/*`. | 2, 3, 8.1, 8.3, photo-assignments |
-| `photos` | Photo library HTTP: bulk upload, list, delete. Uses `platform.media` and `catalog.api`. Owns no datoms. | 8.2 |
+| `catalog` | Categories, products, product images, the photo entity, stock quantity and stock movements (public and staff product endpoints, stock adjustment and history, bulk publication, search/sort, sitemap entries). A picture (`:photo/*`) always belongs to one product. Owns `:category/*`, `:product/*`, `:product-image/*`, `:photo/*`, `:stock-movement/*`. | 2, 3, 8.1, 8.3, product-publications |
+| `photos` | Product picture uploads (per product and bulk by SKU file name) and the CSV product import with its template. No photo library. Uses `platform.media` and `catalog.api` (all writes go through catalog). Owns no datoms. | 8.2 |
 | `policies` | Read the four versioned policy documents (data delivered by migration), return the current one. Owns no writes (migrations write `:policy/*`). | 2 |
 | `orders` | Cart validation, order placement (atomic), tracking, staff order list, detail, fee edit, status changes with stock restore. Owns `:order/*`, `:order-line/*`, `:order-event/*`, `:acceptance/*`. Owns the db functions `place-order` and `change-order-status` (the declared exception in B4: they also write `:product/stock-quantity`, `:stock-movement/*`, `:outbox/*`, `:idempotency/*` in the same transaction). | 3 cart-validations, 4, 7 |
 | `accounts` | Staff users, sessions, login/logout, password change, owner password reset, staff management. Owns `:user/*`, `:session/*`, `:reset-token/*`. | 6, 10 |
@@ -518,7 +518,7 @@ design-spec.md questions Q1 to Q15 are answered too (design-spec.md section 10, 
 
 ## 10. Research notes and sources
 
-- Pedestal and Reitit: [Pedestal 0.8.0 release](https://clojureverse.org/t/pedestal-0-8-0-released/14736), [Pedestal 0.8 routing guide](https://pedestal.io/pedestal/0.8/reference/routing-quick-reference.html), [reitit-pedestal doc 0.9.1](https://cljdoc.org/d/metosin/reitit/0.9.1/doc/http/pedestal), [pedestal.service versions](https://cljdoc.org/versions/io.pedestal/pedestal.service).
+- Pedestal routing (backend) and Reitit (frontend only); the reitit-pedestal link records why Reitit was not used on the backend: [Pedestal 0.8.0 release](https://clojureverse.org/t/pedestal-0-8-0-released/14736), [Pedestal 0.8 routing guide](https://pedestal.io/pedestal/0.8/reference/routing-quick-reference.html), [reitit-pedestal doc 0.9.1](https://cljdoc.org/d/metosin/reitit/0.9.1/doc/http/pedestal), [pedestal.service versions](https://cljdoc.org/versions/io.pedestal/pedestal.service).
 - Replicant: `replicant.string/render` renders on the JVM; current coordinate `no.cjohansen/replicant {:mvn/version "2026.07.1"}`; the README does not describe hydration. [Replicant on GitHub](https://github.com/cjohansen/replicant).
 - Datomic: [peer-to-transactor connection and multiple peers](https://docs.datomic.com/operation/deployment.html), [dev storage and remote peers](https://docs.datomic.com/operation/storage.html).
 - Gmail SMTP: [Nylas Gmail SMTP settings](https://developer.nylas.com/docs/cookbook/email/gmail-smtp-settings/), [serversmtp Gmail limits 2026](https://serversmtp.com/limits-of-gmail-smtp-server/).
@@ -533,7 +533,7 @@ All made in place.
 - C1 (1.1): the single-origin routing is now stated as decided, with the routing rule (`/api/*` and `/media/*` to the backend; every other path, including `/static/*`, `/healthz`, `robots.txt`, `sitemap.xml`, to the frontend server); removed the sentence offering separate origins; stated that the browser calls relative `/api/...` URLs, that `API_BASE_URL` is a runtime value read only by the frontend server, and that no build-time API URL exists.
 - C2 (1.1): client IP for rate limiting comes from the header named by `CLIENT_IP_HEADER`, set by the edge after verification (clients cannot supply it); replaces "the edge's `X-Forwarded-For`".
 - C3 (1.4, 1.5, 11, 12): the backend health endpoint is now `GET /api/healthz`. The old `GET /healthz` collided with the frontend server's own `/healthz` (section 12) once routing is by path.
-- C4 (1.2): the route-design note is no longer described as Reitit-only (D6 may fall back to Pedestal's router); the rule itself is unchanged.
+- C4 (1.2): the route-design note is no longer described as Reitit-specific; the backend routes with Pedestal's own router (D6, owner decision) and the rule itself is unchanged.
 - C5 (1.5): added "error responses (4xx, 5xx) are `no-store`" and that conditional requests (`If-None-Match`) get 304; added a note that a CDN does not honour a request-level `Cache-Control: no-cache`, so the product page's re-check can be up to about 90 seconds old and the real stock check remains cart validation and order placement; added that the frontend server fetches from the backend internally, so rendered pages are as fresh as the page lifetime.
 - C6 (1.7): `zt_session` is set with `Path=/api` and no `Domain`, so public page requests carry no cookie and stay cacheable.
 - C7 (9, subscribers): `unsubscribeUrl` is built from the configured `SITE_BASE_URL`, not a fixed `https://zandytouch.com`, so staging and production differ only by configuration.

@@ -57,7 +57,7 @@ Admin pages (staff only, not linked from the public site, `noindex`):
 | A6 | Products list (with stock) | `/admin/products` | staff |
 | A7 | New product | `/admin/new-product` | staff |
 | A8 | Edit product (with stock panel) | `/admin/products/{id}` | staff |
-| A9 | Photo library and bulk upload | `/admin/photos` | staff |
+| A9 | Bulk product import | `/admin/product-import` | staff |
 | A10 | Messages and subscribers | `/admin/inbox` | staff |
 | A11 | My account (change password) | `/admin/account` | staff |
 | A12 | Staff accounts | `/admin/staff` | owner only |
@@ -185,12 +185,12 @@ Public:
 - **NewsletterForm**, **ContactForm**.
 - **WhatsAppButton** (prefilled link) and **CallLink**.
 - **Toast / inline notice** (`aria-live`), **Accordion**, **EmptyState**.
-- **SiteFooter**: logo, short blurb, links (Shop, About, Contact, Delivery and payment, Terms of sale, Order terms, Privacy, Returns), contact details, newsletter, social links (Q12), copyright.
+- **SiteFooter**: logo, short blurb, links (Shop, About, Contact, Delivery and payment, Terms of sale, Order terms, Privacy, Returns), contact details, newsletter, social links (TikTok, Facebook, and Instagram once configured; Q12), copyright.
 
 Admin:
-- **AdminShell**: top bar with name and role, Sign out, navigation (Orders, Products, Photos, Inbox, Staff for owner only, My account).
+- **AdminShell**: top bar with name and role, Sign out, navigation (Orders, Products, Import, Inbox, Staff for owner only, My account).
 - **DataTable** (table on desktop, stacked cards on mobile), **StatusPill**, **FilterTabs with counts**, **SearchBar**.
-- **ConfirmDialog**, **ProductForm**, **ImageOrderList**, **UploadDropzone**, **PhotoMatchList**.
+- **ConfirmDialog**, **ProductForm**, **ProductImageManager** (the product's own pictures: upload, reorder, alt text, remove), **UploadDropzone**, **ImportResultList** (one line per CSV row and per photo: created, updated or rejected with the reason).
 - **StockPanel** (current count, status badge, "Adjust stock" button, recent movements), **StockAdjustDialog** (modes: Add stock, Remove stock, Set to counted number; reason select; note), **StockMovementList** (type, change, quantity after, reason, order number link, who, when).
 - **DeliveryFeeField** (UGX input with the running total beside it).
 - **TemporaryPasswordNotice**, **ConflictBanner**.
@@ -212,7 +212,7 @@ Admin:
 | Sitemap | `sitemap.xml` | `GET /api/sitemap-entries` |
 | Staff sign in, reset, password | A1 to A3, A11 | `/api/auth/*`, `PUT /api/admin/account/password` |
 | Orders, delivery fee, status | A4, A5 | `/api/admin/orders*` |
-| Products, stock, photos | A6 to A9 | `/api/admin/products*`, `/api/admin/products/{id}/stock-movements`, `/api/admin/photos*`, `/api/admin/photo-assignments` |
+| Products, stock, product pictures, bulk import | A6 to A9 | `/api/admin/products*`, `/api/admin/products/{id}/stock-movements`, `/api/admin/products/{id}/images`, `/api/admin/product-imports`, `/api/admin/product-images`, `/api/admin/product-publications`, `/api/admin/product-import-template` |
 | Messages, subscribers | A10 | `/api/admin/contact-messages`, `/api/admin/subscribers` |
 | Staff accounts | A12 | `/api/admin/staff*` |
 
@@ -254,14 +254,16 @@ ProductForm sections:
 - Price: price in UGX. Required to publish; a draft may be saved without it. Hint: "A product needs a price before it can be published."
 - Stock: on A7 an "Opening stock" number field (default 0). On A8 the StockPanel replaces it: the current count is read-only and changes only through Adjust stock, so saving the form can never overwrite stock changed by an order. Hint: "Orders reduce this number. At 0 the product shows as sold out."
 - Descriptions: short, full, size, how to use, ingredients.
-- Images: pick from the library, reorder, alt text, upload shortcut.
+- Images: the ProductImageManager. Upload pictures straight onto this product (up to 6), reorder them, set alt text, remove one. Pictures belong to the product; there is no shared library to pick from. On A7 the images section appears after the first Save (the product needs to exist first).
 - Publishing: draft or published, featured toggle. Publish is blocked with inline messages when price, image or category is missing.
 Save, Save and view on shop. A8 also has Remove and a "last updated by" line.
 
-### A9 Photo library and bulk upload `/admin/photos`
-1. UploadDropzone (up to 20 files, 5 MB each, JPEG, PNG, WebP), per-file progress and error.
-2. PhotoMatchList: each uploaded photo with its suggested product (file name starts with the SKU) or a product picker, and "Attach selected".
-3. Library grid with "Unassigned only" and delete.
+### A9 Bulk product import `/admin/product-import`
+Purpose: let the owner fill or update the catalogue in one go with product details and their pictures. Pictures are not managed separately; they always end up on a product.
+1. Step 1, the spreadsheet. A short explanation, a "Download the template" link (CSV with the column headings and two example rows), and a file field for the filled CSV (saved as "CSV UTF-8" from Excel or Google Sheets). Columns: `sku` (required, the key), `name`, `brand`, `ownBrand` (yes/no), `category` (one of the six, by name), `price` (UGX, optional for a draft), `shortDescription`, `description`, `size`, `howToUse`, `ingredients`, `featured` (yes/no), `openingStock` (new products only). On upload the server checks every row and creates new products as drafts or updates existing ones (matched by SKU). ImportResultList shows each row: created, updated or rejected, with the reason per field ("price must be a whole number of shillings").
+2. Step 2, the pictures. An UploadDropzone for the product photos, any number at once (the page sends them to the server 20 at a time, with progress). Each file name must start with the SKU, with an optional `-1` to `-6` suffix for the order (`ZT-SKIN-001-1.jpg`, `ZT-SKIN-001-2.jpg`). Each picture is attached to that product; a file whose SKU matches no product is rejected and not kept. Results per file in the ImportResultList.
+3. Step 3, review and publish. A list of the imported drafts with what each still lacks (price, picture, category). "Publish all complete drafts" publishes every draft that has a price, a picture and a category; the others stay drafts with a link to fix them on A8.
+Updates to existing products keep their current status (a published product stays published). An import never changes the stock of an existing product.
 
 ### A10 Inbox and subscribers `/admin/inbox`
 Two tabs. Messages: newest first. Subscribers: list with source and date, "Export CSV".
@@ -352,7 +354,7 @@ All answered by the owner on 25 October 2026; the answers are in business-contex
 - Q9 Sale prices: not in v1.
 - Q10 Shop: Ring roads, Rubaga Rd, opposite Red Cross, Kampala. Monday to Saturday 8:00 AM – 10:00 PM, Sunday 10:00 AM – 9:30 PM.
 - Q11 Public email: the owner email may be shown publicly.
-- Q12 Social: Instagram and TikTok placeholders only, links added later (hidden while empty).
+- Q12 Social: TikTok (https://www.tiktok.com/@zandytouch) and Facebook (https://www.facebook.com/nanyonjo.sandra.1/) are linked in the footer. Instagram is an empty slot, hidden until an address is configured.
 - Q13 Brands: Zandy Luxe is Zandy Touch, not a separate brand. Third-party brands are sold alongside own-brand products.
 - Q14 Gmail sending: accepted.
 - Q15 Thresholds: low stock at 5 or fewer; at most 10 per product line.

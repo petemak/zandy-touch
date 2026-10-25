@@ -27,7 +27,7 @@ For the shop owner (root account):
 - Add products (description, price, images) to the product catalogue
 - Update product details (description, price, images)
 - Remove products from the product catalogue
-- Bulk upload product photos
+- Bulk import products: names, descriptions, prices and the related images in one go (a spreadsheet plus photos)
 
 
 For appointed support personnel:
@@ -37,7 +37,7 @@ For appointed support personnel:
 - Add products (description, price, images) to the product catalogue
 - Update product details (description, price, images)
 - Remove products from the product catalogue
-- Bulk upload product photos
+- Bulk import products: names, descriptions, prices and the related images in one go (a spreadsheet plus photos)
 
 Customer:
 - Browse product catalogue
@@ -104,7 +104,10 @@ Owner email: sandratonanyonjo@gmail.com. Use it as the sender address for site e
 - Address: Ring roads, Rubaga Rd, opposite Red Cross, Kampala, Uganda
 - Opening hours: Monday to Saturday 8:00 AM – 10:00 PM; Sunday 10:00 AM – 9:30 PM
 - WhatsApp number: the same as the phone number, +256706105779
-- Social media: accounts will be added later. Show placeholders for Instagram and TikTok.
+- Social media (link them in the site footer):
+  - TikTok: https://www.tiktok.com/@zandytouch
+  - Facebook: https://www.facebook.com/nanyonjo.sandra.1/
+  - Instagram: no account yet. Keep an empty slot that appears once an address is configured.
 - The owner email may be shown publicly. It is also the sender of site emails (Gmail, with its sending limits and spam risk accepted for launch).
 
 Products and brands
@@ -127,4 +130,10 @@ Policies and data
 - Policy texts are reviewed by a human: the owner is consulted manually before any text is approved.
 - Customer personal data (contact details on orders, contact messages) is kept for 6 months, then removed.
 - Original uploaded photos are deleted after the resized versions are made.
+- Product pictures are not a feature of their own: a picture always belongs to a product. There is no separate photo
+  library. Pictures are added on the product itself or come in with a bulk import.
+- Bulk import: the owner fills a CSV spreadsheet (one row per product, saved from Excel or Google Sheets) and uploads it
+  together with the product photos, each photo named after the product's SKU (for example ZT-SKIN-001-1.jpg). Imported
+  products are drafts until staff review and publish them. A row whose SKU already exists updates that product.
+  An import never changes stock of an existing product; stock changes go through stock adjustments.
 - Catalogue pages may be served from cache for up to a day if the backend is down; logo and icons are cached for 1 day.]
