@@ -1,5 +1,6 @@
 (ns zandy.catalog-test
   (:require [clojure.test :refer [deftest is testing]]
+            [zandy.features.catalog.api :as catalog]
             [zandy.test-helpers :as t]))
 
 (defn- names [resp] (map :name (get-in resp [:body :items])))
@@ -171,6 +172,25 @@
         (is (= 200 (:status l)))
         (is (contains? (:body l) :counts))
         (is (= "Sandra" (get-in l [:body :items 0 :updated-by :name])))))))
+
+(deftest stock-tabs-match-their-counts
+  (let [ctx (t/make-ctx) app (t/app ctx)
+        owner (t/setup-owner! ctx app)
+        sold-out (t/seed-product! ctx {:name "Sold Out Serum" :stock 0})
+        _low (t/seed-product! ctx {:name "Low Lotion" :stock 2})
+        _draft (catalog/create-product! ctx {} {:name "Draft Zero" :brand "B" :category-slug "skincare"
+                                                :status "draft" :stock-quantity 0})
+        list-of (fn [query] (:body (t/staff app owner :get (str "/api/admin/products" query) :idem false)))]
+    (testing "the Out of stock tab lists published products only, matching its count"
+      (let [b (list-of "?stock=out")]
+        (is (= [(str (:id sold-out))] (map (comp str :id) (:items b))))
+        (is (= 1 (get-in b [:counts :out])))))
+    (testing "the Low stock tab lists published products only, matching its count"
+      (let [b (list-of "?stock=low")]
+        (is (= ["Low Lotion"] (map :name (:items b))))
+        (is (= 1 (get-in b [:counts :low])))))
+    (testing "an explicit status still wins"
+      (is (= ["Draft Zero"] (map :name (:items (list-of "?stock=out&status=draft"))))))))
 
 (deftest stock-adjustments
   (let [ctx (t/make-ctx) app (t/app ctx)

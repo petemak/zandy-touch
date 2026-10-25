@@ -9,7 +9,7 @@
 ;; ---------------------------------------------------------------------------
 ;; P5 Cart
 
-(defn cart-page [{:keys [cart cart-check]}]
+(defn cart-page [{:keys [cart cart-check ui]}]
   (let [items (:items cart)
         result (:result cart-check)
         vlines (into {} (map (juxt :productId identity)) (:items result))
@@ -25,6 +25,8 @@
                        (ui/link-button "/shop" {} "Keep shopping"))
        [:div.cart-layout
         [:div
+         (when-let [m (:cart-notice ui)]
+           (ui/notice {:kind :warning :live? true} m))
          (when (= :error (:status cart-check))
            (ui/notice {:kind :warning :live? true}
                       "We could not refresh prices and availability. "
@@ -43,7 +45,11 @@
                       (cond checking? "Checking your cart"
                             problems? "Fix the marked items first"
                             :else "Checkout"))
-           (ui/link-button "/checkout" {:full? true} "Checkout"))
+           (ui/link-button "/checkout"
+                          {:full? true
+                           ;; proceeding to checkout means the customer has seen the prices
+                           :attrs {:on {:click [[:cart/acknowledge-prices] [:nav/link "/checkout"]]}}}
+                          "Checkout"))
          (ui/link-button "/shop" {:variant :secondary :full? true} "Keep shopping")]])]))
 
 ;; ---------------------------------------------------------------------------

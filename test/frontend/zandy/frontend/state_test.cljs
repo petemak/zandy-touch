@@ -5,7 +5,8 @@
             [zandy.frontend.admin.widgets :as w]
             [zandy.frontend.state :as s]
             [zandy.shared.cart :as cart]
-            [zandy.shared.routes :as routes]))
+            [zandy.shared.routes :as routes]
+            [zandy.shared.ui.order :as order]))
 
 (def serum {:id "p1" :slug "serum" :name "Serum" :price 85000 :image nil :maxQuantity 10})
 
@@ -494,3 +495,48 @@
 (deftest orders-list-reads-q-from-the-url
   (let [state (st :route (routes/match-url "/admin?q=ZT-7K3P9Q"))]
     (is (= "ZT-7K3P9Q" (get-in (as/route-requests state) [:orders :query :q])))))
+
+(def price-v {:items [{:productId "p1" :unitPrice 90000 :name "Serum" :slug "serum" :image nil :problem nil}] :hasProblems false})
+
+(deftest price-change-is-kept-until-seen
+  (let [cart0 (cart/add-item cart/empty-cart serum 1 10)
+        state (st :route (routes/match-url "/cart") :cart cart0)
+        sig (cart/cart-signature cart0)]
+    (testing "validation keeps the price the customer saw"
+      (let [r (s/handle state [:cart/validated sig {:status 200 :body price-v}])]
+        (is (= 85000 (get-in r [:state :cart :items 0 :price])))
+        (is (= price-v (get-in r [:state :cart-check :result])))
+        (testing "the Checkout click acknowledges it"
+          (let [r2 (s/handle (:state r) [:cart/acknowledge-prices])]
+            (is (= 90000 (get-in r2 [:state :cart :items 0 :price])))
+            (is (seq (effects-named r2 :fx/save-cart)))))))
+    (testing "after a 409 the cart shows the notice again"
+      (let [acked (cart/acknowledge-prices cart0 {:items [{:productId "p1" :unitPrice 85000}]})
+            back (:state (s/handle (st :route (routes/match-url "/checkout") :cart acked :order-key "k")
+                                   [:checkout/result {:status 409 :body {:error {:code "cartOutdated" :message "x" :details []}}}]))
+            r (s/handle (assoc back :route (routes/match-url "/cart")) [:cart/validated (cart/cart-signature acked) {:status 200 :body price-v}])
+            line (first (:items (get-in r [:state :cart-check :result])))]
+        (is (some? (order/price-changed-notice line (get-in r [:state :cart :items 0]))))))))
+
+(deftest empty-checkout-goes-to-cart
+  (testing "no items: replace /checkout with /cart"
+    (let [r (s/handle (st) [:nav/go "/checkout"])]
+      (is (some #(= [:fx/dispatch [:nav/replace "/cart"]] %) (:fx r)))))
+  (testing "with items: stays"
+    (let [r (s/handle (st :cart (cart/add-item cart/empty-cart serum 1 10)) [:nav/go "/checkout"])]
+      (is (empty? (filter #(= [:fx/dispatch [:nav/replace "/cart"]] %) (:fx r)))))))
+
+(deftest stock-dialog-mode-change-clears-stale-message
+  (let [state (st :forms {:dialog {:values {:mode "remove"} :errors {:form "Stock cannot go below zero." :qty "x"}}})
+        r (s/handle state [:form/set :dialog :mode "set"])]
+    (is (nil? (get-in r [:state :forms :dialog :errors :form])))
+    (is (= "set" (get-in r [:state :forms :dialog :values :mode])))))
+
+(deftest cart-notice-shows-on-cart-only
+  (let [r (s/handle (st :route (routes/match-url "/checkout") :cart (cart/add-item cart/empty-cart serum 1 10) :order-key "k")
+                    [:checkout/result {:status 409 :body {:error {:code "cartOutdated" :message "x" :details []}}}])
+        msg (get-in r [:state :ui :cart-notice])
+        at-cart (s/handle (:state r) [:nav/go "/cart"])]
+    (is (re-find #"Nothing was ordered" msg))
+    (is (= msg (get-in at-cart [:state :ui :cart-notice])) "still there once /cart is shown")
+    (is (nil? (get-in (s/handle (:state at-cart) [:nav/go "/shop"]) [:state :ui :cart-notice])) "gone after leaving the cart")))

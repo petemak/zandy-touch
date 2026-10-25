@@ -360,6 +360,16 @@
      [:span {:class (cond (zero? n) "stock-zero" (:lowStock p) "stock-low")} n] " "
      (cond (zero? n) (ui/badge :sold-out) (:lowStock p) (ui/badge :low-stock))]))
 
+(def archive-dialog-text
+  "One text for the Remove confirm box on the products list and the product page."
+  "This archives the product. It leaves the shop, search and sitemap. Orders and stock history are kept. You can bring it back later from the Archived tab with Restore.")
+
+(defn- archive-dialog [dlg]
+  (dialog {:title (str "Remove " (:name dlg) "?")}
+          [:p archive-dialog-text]
+          [:div.dialog__actions (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
+           (ui/button {:on-click [[:admin/archive (:id dlg)]]} "Archive product")]))
+
 (defn- stock-dialog [state product-id current name]
   (let [f (forms state :dialog) v (:values f) errs (:errors f)]
     (dialog {:title (str "Adjust stock: " name)}
@@ -426,10 +436,7 @@
                  (pager "/admin/products" (select-keys query [:status :stock :q]) body)]))
             (case (:type dlg)
               :stock (stock-dialog state (:id dlg) (:current dlg) (:name dlg))
-              :archive (dialog {:title (str "Remove " (:name dlg) "?")}
-                               [:p "This archives the product. It leaves the shop, search and sitemap. Orders and stock history are kept. You can bring it back later from the Archived tab with Restore."]
-                               [:div.dialog__actions (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
-                                (ui/button {:on-click [[:admin/archive (:id dlg)]]} "Archive product")])
+              :archive (archive-dialog dlg)
               nil)])))
 
 ;; ---------------------------------------------------------------------------
@@ -552,11 +559,7 @@
                    [:p "Removing archives the product. Orders and stock history are kept."]
                    (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :archive :id (:id p) :name (:name p)}]]} "Remove from shop")
                    (when (= :archive (:type (:dialog (admin-ui state))))
-                     (let [dlg (:dialog (admin-ui state))]
-                       (dialog {:title (str "Remove " (:name dlg) "?")}
-                               [:p "This archives the product. It leaves the shop, search and sitemap."]
-                               [:div.dialog__actions (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
-                                (ui/button {:on-click [[:admin/archive (:id dlg)]]} "Archive product")])))])])))))
+                     (archive-dialog (:dialog (admin-ui state))))])])))))
 
 ;; ---------------------------------------------------------------------------
 ;; ---------------------------------------------------------------------------

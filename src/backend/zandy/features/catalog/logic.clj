@@ -134,8 +134,12 @@
    :images (mapv admin-image-view (sorted-images images))
    :created-at created-at :updated-at updated-at :updated-by updated-by})
 
-(defn filter-admin [products {:keys [status category-slug q stock]} low]
-  (let [q (some-> q str/lower-case)]
+(defn filter-admin
+  "Admin product list filter. The `stock` tabs (out, low) list published products only, like
+  `admin-counts`, unless an explicit `status` is given, so a tab's count matches its rows."
+  [products {:keys [status category-slug q stock]} low]
+  (let [q (some-> q str/lower-case)
+        status (or status (when (#{"out" "low"} stock) "published"))]
     (cond->> products
       true (filter (fn [p] (if status (= (keyword status) (:status p)) (not= :archived (:status p)))))
       category-slug (filter #(= category-slug (get-in % [:category :slug])))

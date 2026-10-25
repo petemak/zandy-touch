@@ -12,9 +12,19 @@
 (defonce ^:private !dispatch (atom nil))
 (defonce ^:private !state-getter (atom nil))
 
+(defn- reveal-nav-link!
+  "Keyboard focus on a category link inside the scrolling phone strip: scroll
+  it fully into view (the browser may leave a half-visible link clipped).
+  scrollIntoView honours the strip's scroll-padding and the link's scroll-margin."
+  [^js e]
+  (let [^js el (.-target e)]
+    (when (and el (.closest el ".site-nav__list"))
+      (.scrollIntoView el #js {:inline "nearest" :block "nearest"}))))
+
 (defn init! [dispatch state-getter]
   (reset! !dispatch dispatch)
-  (reset! !state-getter state-getter))
+  (reset! !state-getter state-getter)
+  (.addEventListener js/document "focusin" reveal-nav-link!))
 
 (defn- dispatch! [action] (when-let [f @!dispatch] (f action)))
 

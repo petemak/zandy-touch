@@ -171,7 +171,7 @@ All four render a policy document from `GET /api/policies/{type}` (title, versio
 ## 3. Component inventory (reused)
 
 Public:
-- **SiteHeader / Nav**: logo (SVG recreated from the brand mark: Z monogram, wordmark, slogan; no phone number or category icons from the badge), category links (six, collapsing to a menu on mobile), search icon opening a field, cart icon with count. Black with a gold hairline.
+- **SiteHeader / Nav**: logo (SVG recreated from the brand mark: Z monogram, wordmark, slogan; no phone number or category icons from the badge), category links (six; on phones a horizontally scrolling strip, owner decision DA6: every link reachable by keyboard and scrolled fully into view on focus, a visible cue that more links exist, no sideways page scroll at 320 px or 200% zoom), search icon opening a field, cart icon with count. Black with a gold hairline.
 - **AnnouncementBar** (optional): "Pay on delivery: cash or mobile money".
 - **SearchField**, **Breadcrumb**.
 - **ProductCard**: image, badges (New, Sold out, Zandy Touch), name, brand, price. Whole card links to the product. No quick-add in v1.

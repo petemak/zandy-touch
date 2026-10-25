@@ -64,14 +64,30 @@
           (:items cart))))
 
 (defn apply-validation
-  "Refresh stored price/name/image from a validation response."
+  "Refresh stored name/slug/image from a validation response. The stored
+  :price is NOT overwritten: it is the price the customer last saw, so the cart
+  can say \"Price changed\" while it differs from the validated :unitPrice.
+  `acknowledge-prices` moves it forward."
   [cart validation]
   (let [by-id (into {} (map (juxt :productId identity)) (:items validation))]
     (update cart :items
             (fn [items]
               (mapv (fn [it]
                       (if-let [v (get by-id (:product-id it))]
-                        (assoc it :price (:unitPrice v) :name (:name v) :slug (:slug v) :image (:image v))
+                        (assoc it :name (:name v) :slug (:slug v) :image (:image v))
+                        it))
+                    items)))))
+
+(defn acknowledge-prices
+  "The customer has seen the validated prices (they proceed to checkout):
+  the stored price becomes the validated unit price, so the notice clears."
+  [cart validation]
+  (let [by-id (into {} (map (juxt :productId identity)) (:items validation))]
+    (update cart :items
+            (fn [items]
+              (mapv (fn [it]
+                      (if-let [p (:unitPrice (get by-id (:product-id it)))]
+                        (assoc it :price p)
                         it))
                     items)))))
 

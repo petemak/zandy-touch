@@ -40,6 +40,9 @@
       (= :product route-name) (conj [:fx/request {:path (str "/api/products/" (:slug params)) :no-cache? true}
                                      [:product/rechecked (:slug params)]])
       (#{:cart :checkout} route-name) (conj [:fx/dispatch [:cart/validate]])
+      ;; nothing to check out: go to the cart (Journey 1 side path)
+      (and (= :checkout route-name) (empty? (get-in state [:cart :items])))
+      (conj [:fx/dispatch [:nav/replace "/cart"]])
       (= :checkout route-name) (into [[:fx/request {:path "/api/delivery-areas"} [:refs/areas-loaded]]
                                       [:fx/dispatch [:agreement/load]]])
       (:admin? (:data (:route state))) (conj [:fx/dispatch [:admin/enter]]))))
@@ -56,6 +59,8 @@
   once."
   [state route {:keys [push? scroll?] :or {push? true scroll? true}} url]
   (let [state (-> state (assoc :route route :pending-url url) reset-page-ui)
+        ;; the "cart changed while you were checking out" message belongs to the cart page only
+        state (cond-> state (not= :cart (:name route)) (update :ui dissoc :cart-notice))
         reqs (when route (pages/requests route))
         pre (cond-> []
               push? (conj [:fx/push-url url]))]
@@ -211,6 +216,10 @@
          [[:fx/request {:method :post :path "/api/cart-validations" :body (cart/validation-request (:cart state))}
            [:cart/validated (cart/cart-signature (:cart state))]]])))
 
+(defmethod handle :cart/acknowledge-prices [state _]
+  (let [new-cart (cart/acknowledge-prices (:cart state) (get-in state [:cart-check :result]))]
+    (ret (assoc state :cart new-cart) [[:fx/save-cart new-cart]])))
+
 (defmethod handle :cart/validated [state [_ sig {:keys [status body]}]]
   (cond
     (not= sig (cart/cart-signature (:cart state))) (ret state)
@@ -233,7 +242,11 @@
            (update-in (conj (form-path form-id) :errors) dissoc k))))
 
 (defmethod handle :form/set [state [_ form-id k v]]
-  (handle state [:form/input form-id k v]))
+  (let [r (handle state [:form/input form-id k v])]
+    ;; a form-level message (e.g. "Stock cannot go below zero.") belongs to the
+    ;; previous choice; clear it when the choice changes.
+    (cond-> r
+      (= :dialog form-id) (update-in [:state :forms :dialog :errors] dissoc :form))))
 
 (defmethod handle :form/noop [state _] (ret state))
 

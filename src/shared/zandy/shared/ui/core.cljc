@@ -49,9 +49,10 @@
 
 (defn link-button
   "A link that looks like a button."
-  [path {:keys [variant class full?]} & children]
-  (apply link path {:class (classes "button" (str "button--" (name (or variant :primary)))
-                                    (when full? "button--full") class)}
+  [path {:keys [variant class full? attrs]} & children]
+  (apply link path (merge {:class (classes "button" (str "button--" (name (or variant :primary)))
+                                           (when full? "button--full") class)}
+                          attrs)
          children))
 
 (defn badge [kind]
@@ -131,7 +132,7 @@
   `eager?` is for the above-the-fold hero."
   ([file alt width height eager?] (site-photo file alt width height eager? nil))
   ([file alt width height eager? extra-class]
-  [:img (cond-> {:class (cond-> "site-photo" extra-class (str " " extra-class)) :src (str "/static/assets/photos/" file) :alt alt
+  [:img (cond-> {:class (classes "site-photo" extra-class) :src (str "/static/assets/photos/" file) :alt alt
                  :width width :height height :decoding "async"}
           (not eager?) (assoc :loading "lazy"))]))
 

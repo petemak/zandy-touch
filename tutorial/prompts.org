@@ -5,24 +5,28 @@
 
 * Prompts
 ** 1. Brand strategist to architect (design)
+#+BEGIN_QUOTE
 Use the brand-strategist subagent to build a brand brief.
 Then use the ux-designer subagent to turn that brief into a
 design spec and API contract. Then use the visual-designer
 subagent to derive the visual identity and design tokens for
 the customers described in business-context.md. Then use the
 architect subagent in design mode to produce architecture.md.
+#+END_QUOTE
 
 ** 2. Spawn the build agents
-Spawn two teammates to build the site from design-spec.md and api-contract.md:
+S#+BEGIN_QUOTE
+pawn two teammates to build the site from design-spec.md and api-contract.md:
 
 - One teammate using the frontend-cljs agent type, owning everything under src/frontend/
 - One teammate using the backend-clojure agent type, owning everything under src/backend/
   
 Have them confirm they're both reading the same api-contract.md before either writes code.
 Wait for both to finish before proceeding.
-
+#+END_QUOTE
 
 ** 2a. Repeat build agents
+#+BEGIN_QUOTE
 Spawn two teammates again to update the site from design-spec.md and api-contract.md:
 
 - One teammate using the backend-clojure agent type, owning its paths in architecture.md section 4.1
@@ -40,6 +44,7 @@ Changes to implement:
 
 Have both confirm that `sha256sum api-contract.md` gives 9330872b0e5ad5f6fd614261eaf5c7d2058489aab52f19ef02e8187f41aecfd4 before writing code.
 Run all tests, the dependency check scripts and clj-kondo before reporting. Wait for both to finish.
+#+END_QUOTE
 
 ** 2b. Run servers and test
 Run each command in its own terminal, starting from the project root (/home/pjm/dev/learn/zandy-touch).
@@ -73,3 +78,26 @@ Run each command in its own terminal, starting from the project root (/home/pjm/
    
 
 Then open http://127.0.0.1:8090. The admin is at http://127.0.0.1:8090/admin.
+
+
+** Join: integrate and verify
+#+BEGIN_QUOTE
+First use the architect subagent in review mode to compare the code under src/, ssr/, resources/, scripts/ and test with architecture.md and write architecture-review.md.
+Then use a QA subagent to run the frontend against the live backend, confirm every endpoint in api-contract.md is called
+correctly and returns what's expected, and cross-check the finished site against scope-checklist.md — every "applies"
+item should have working functionality, not just a page. Report anything missing or mismatched.
+
+In particular:
+
+
+1. Rule on the deviations the builders reported:
+   - backend: no muuntaja or mulog; stored-response idempotency; extra module edges; picture records as components of products (migration 0010)
+   - frontend: no Replicant takeover; extra shared.pages and admin.widgets/help edges; scrollable category strip
+2. Check the bulk import, per-product pictures and bulk publish against api-contract.md section 8.2, and confirm the photo library is completely gone.
+3. Write the import details the builders agreed on into api-contract.md: whole-file and per-row error codes, row numbering, dry-run idempotency keys, and how the frontend finds new drafts.
+4. Check the staff help: admin-help.md is owned by ux-designer, converted by scripts/build/help.clj and wired into scripts/build/build.sh; the role filtering is a convenience, not a security boundary.
+5. Confirm all dates are shown in Kampala time while the API stays UTC.
+6. Fix the wording of fitness checks N6(b) and B10(a) (Portfolio's :modules; sitemaps.org).
+7. Find out why the backend exits after start-up without ZANDY_PROFILE=dev.
+8. List the edits made outside each owner's folders (assets/photos, resources/seed, admin-help.md, scripts/build/help.clj) and rule on them.
+#+END_QUOTE

@@ -179,7 +179,7 @@ The stock number cannot be changed on this form. Use **Adjust stock**. See [Stoc
 ### Removing a product
 Removing hides the product from the shop. It is called archiving. The product is not lost, and you can bring it back later.
 1. In **Products**, press **Remove** next to the product, or open the product and press **Remove from shop** at the bottom.
-2. A box asks "Remove (product name)?" It says you can bring the product back later from the Archived tab with Restore. Press **Archive product**.
+2. A box asks "Remove (product name)?" It says: "This archives the product. It leaves the shop, search and sitemap. Orders and stock history are kept. You can bring it back later from the Archived tab with Restore." Press **Archive product**, or press **Cancel** to leave the product as it is.
 3. You see "Product removed from the shop (archived)."
 
 The product leaves the shop, search and the sitemap. Old orders and the stock history are kept, even for orders that are still open.
@@ -272,7 +272,7 @@ Walk-in sales also come from the same stock, so record each one (or the day's to
 
 If a customer ordered the product while you were counting, you see "The stock changed while you were working. The latest count has been loaded. Please check it and confirm again." Count again if needed, then confirm. This stops your count from wiping out a new order.
 
-If you type the number that is already there, the box says "The count already matches."
+If the number you typed is the same as the **Current count**, nothing is saved. When you press **Confirm**, the box says "The count already matches." under the number. Type a different number and press **Confirm** again.
 
 > Good to know: stock can never go below 0. If you try to remove more than there is, the box refuses.
 > Good to know: every change is saved in the history with who made it and when. A change cannot be deleted. To fix a mistake, make a new adjustment that puts it right.
@@ -359,7 +359,7 @@ Other common reasons: the same SKU appears twice in the file (the second row is 
 3. The column **Still needs** says **Ready to publish**, or lists what is missing: **Price**, **Picture** or **Category**.
 4. For a product that is missing something, press **Edit product** in the **Fix** column and fix it on its own page. See [Adding and changing products](help:products).
 5. Press **Publish all complete drafts (number)**. The number is how many are ready.
-6. The page says how many products were published. Products that were not ready are listed under "These stay drafts:" with the reason.
+6. The page says how many products were published, for example "3 products published." Only the complete drafts are published. Products that were not ready are left alone: they stay in the table with their **Still needs** entries, and you can fix them with **Edit product** and publish them later. Only if the shop refuses to publish a product does the message turn yellow and add a list under "These stay drafts:" with the reason for each one.
 7. Press **Go to products** to see them in the main list.
 
 > Good to know: drafts are invisible to customers until they are published.

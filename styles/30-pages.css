@@ -51,7 +51,27 @@
 }
 .header-search__form .input { flex: 1; }
 .site-nav { border-top: var(--border-width) solid var(--zt-black-raised); }
-.site-nav__list { display: flex; gap: var(--space-4); list-style: none; overflow-x: auto; scrollbar-width: none; }
+/* Phone strip: scrolls sideways. Focus scrolls a link fully into view
+   (scroll-padding on the strip, scroll-margin on the links, no JS). The edge
+   fades say "more links this way": the fades are scroll-attached backgrounds,
+   and the opaque local-attached covers hide a fade once that edge is reached,
+   so nothing sits above a link and nothing blocks a click. */
+.site-nav__list {
+  --nav-fade: var(--space-6);
+  --nav-fade-colour: color-mix(in srgb, var(--color-on-dark-accent) 35%, transparent);
+  display: flex;
+  gap: var(--space-4);
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding-inline: var(--space-8);
+  background:
+    linear-gradient(to right, var(--color-surface-inverse) 30%, transparent) left center / var(--nav-fade) 100% no-repeat local,
+    linear-gradient(to left, var(--color-surface-inverse) 30%, transparent) right center / var(--nav-fade) 100% no-repeat local,
+    linear-gradient(to right, var(--nav-fade-colour), transparent) left center / var(--nav-fade) 100% no-repeat scroll,
+    linear-gradient(to left, var(--nav-fade-colour), transparent) right center / var(--nav-fade) 100% no-repeat scroll,
+    var(--color-surface-inverse);
+}
 .site-nav__link {
   display: inline-flex;
   align-items: center;
@@ -59,6 +79,7 @@
   color: var(--color-text-inverse);
   text-decoration: none;
   white-space: nowrap;
+  scroll-margin-inline: var(--space-4);
 }
 .site-nav__link[aria-current="page"] { color: var(--color-on-dark-accent); text-decoration: underline; }
 @media (hover: hover) { .site-nav__link:hover { color: var(--color-on-dark-accent-hover); } }
