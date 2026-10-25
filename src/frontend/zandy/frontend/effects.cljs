@@ -79,15 +79,19 @@
                              (swap! results assoc k r)
                              (when (zero? (swap! pending dec))
                                (dispatch! [:page/loaded a @results]))))))
-    :fx/upload
-    (let [input (.getElementById js/document (:input a))
-          fd (js/FormData.)]
-      (doseq [f (array-seq (.-files input))] (.append fd "files" f))
-      (api/request! (with-credentials {:method :post :path (:path a) :form-data fd :idempotency-key (:idempotency-key a)})
+    :fx/upload-files
+    ;; a = {:path :files [{:file <js File>}] :field (default "files") :query :idempotency-key}.
+    ;; Multipart; the browser sets the boundary header itself.
+    (let [fd (js/FormData.)
+          field (or (:field a) "files")]
+      (doseq [f (:files a)] (.append fd field (:file f)))
+      (api/request! (with-credentials (cond-> {:method :post :path (:path a) :form-data fd :idempotency-key (:idempotency-key a)}
+                                        (:query a) (assoc :query (:query a))))
                     (fn [r] (dispatch! (conj b r)))))
     :fx/push-url (router/push! a)
     :fx/replace-url (router/replace! a)
     :fx/scroll-top (.scrollTo js/window 0 0)
+    :fx/print (.print js/window)
     :fx/head (apply-head! (seo/head (@!state-getter) (router/current-origin)))
     :fx/save-cart (store/save-cart! a)
     :fx/save-order (store/save-last-order! a)

@@ -61,6 +61,7 @@ Admin pages (staff only, not linked from the public site, `noindex`):
 | A10 | Messages and subscribers | `/admin/inbox` | staff |
 | A11 | My account (change password) | `/admin/account` | staff |
 | A12 | Staff accounts | `/admin/staff` | owner only |
+| A13 | Help (topic list and one page per topic) | `/admin/help`, `/admin/help/{topic}` | staff; topics filtered by role |
 
 There is deliberately no "create order" page in the admin. Customers place all orders in the webshop.
 
@@ -188,7 +189,7 @@ Public:
 - **SiteFooter**: logo, short blurb, links (Shop, About, Contact, Delivery and payment, Terms of sale, Order terms, Privacy, Returns), contact details, newsletter, social links (TikTok, Facebook, and Instagram once configured; Q12), copyright.
 
 Admin:
-- **AdminShell**: top bar with name and role, Sign out, navigation (Orders, Products, Import, Inbox, Staff for owner only, My account).
+- **AdminShell**: top bar with name and role, Sign out, navigation (Orders, Products, Import, Inbox, Staff for owner only, My account, Help). Every admin page (A4 to A12) also shows a small "How do I…?" link near its title that opens the matching A13 topic.
 - **DataTable** (table on desktop, stacked cards on mobile), **StatusPill**, **FilterTabs with counts**, **SearchBar**.
 - **ConfirmDialog**, **ProductForm**, **ProductImageManager** (the product's own pictures: upload, reorder, alt text, remove), **UploadDropzone**, **ImportResultList** (one line per CSV row and per photo: created, updated or rejected with the reason).
 - **StockPanel** (current count, status badge, "Adjust stock" button, recent movements), **StockAdjustDialog** (modes: Add stock, Remove stock, Set to counted number; reason select; note), **StockMovementList** (type, change, quantity after, reason, order number link, who, when).
@@ -273,6 +274,14 @@ Name and role; change password. With a temporary password this is the only page 
 
 ### A12 Staff accounts `/admin/staff` (owner only)
 List (name, email, role, active, last sign-in). Add support employee (name, email, notify on new orders), then TemporaryPasswordNotice. Row actions: Reset password, Deactivate (ConfirmDialog). The owner's row has no deactivate.
+
+### A13 Help `/admin/help` and `/admin/help/{topic}`
+Purpose: let the owner and support staff do every admin task without outside help. The content comes from admin-help.md (written by ux-designer, see that file for its format); the frontend build turns it into pages, so no text lives in the backend or database.
+1. Topic list: the topics for the signed-in role, grouped (Getting started, Orders, Products and stock, Bulk import, Messages, Staff and account), each with a one-line summary.
+2. Topic page: title, who it is for, short intro, numbered steps with the exact page and button names, "Good to know" notes, and links to related topics and to the admin page it describes.
+3. Role filter: support staff never see owner-only topics (listing or direct link; a direct link to an owner-only topic shows "This topic is for the shop owner" and a link back to Help).
+4. "How do I…?" link on A4 to A12 opens the topic mapped to that page in admin-help.md.
+No screenshots in v1 (added later from QA screenshots). Printable: the topic page prints cleanly without the admin chrome.
 
 ## 6. Icons and badges needed
 

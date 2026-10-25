@@ -6,7 +6,7 @@
             [zandy.shared.routes :as routes]))
 
 (def site {:businessName "Zandy Touch" :tagline "Beauty with Confidence" :phone "+256706105779"
-           :shopAddress "Kampala" :openingHours [{:days "Monday to Saturday" :opens "08:00" :closes "22:00"}] :social {:instagram nil :tiktok nil}})
+           :shopAddress "Kampala" :openingHours [{:days "Monday to Saturday" :opens "08:00" :closes "22:00"}] :social {:tiktok "https://www.tiktok.com/@zandytouch" :facebook "https://www.facebook.com/nanyonjo.sandra.1/" :instagram nil}})
 
 (defn render [url page]
   (document/render-page {:state (assoc (pages/initial-state) :route (routes/match-url url) :site site :page page)
@@ -71,3 +71,33 @@
     (is (not (str/includes? html "wa.me")))
     (is (not (str/includes? html "mailto:")))
     (is (not (str/includes? html "instagram.com")))))
+
+(deftest social-profiles-in-footer-and-json-ld
+  (let [html (render "/about" {:status :ok})]
+    (testing "configured profiles are linked with their icons in the footer"
+      (is (str/includes? html "href=\"https://www.tiktok.com/@zandytouch\""))
+      (is (str/includes? html "href=\"https://www.facebook.com/nanyonjo.sandra.1/\""))
+      (is (str/includes? html "icon-tiktok"))
+      (is (str/includes? html "icon-facebook")))
+    (testing "the links sit under a Follow us heading and show their names"
+      (is (str/includes? html ">Follow us</h2>"))
+      (is (str/includes? html "site-footer__social-label\">TikTok</span>"))
+      (is (str/includes? html "site-footer__social-label\">Facebook</span>")))
+    (testing "a null profile is hidden (Instagram is not configured yet)"
+      (is (not (str/includes? html "instagram.com")))
+      (is (not (str/includes? html "icon-instagram"))))
+    (testing "non-null profiles are the Store sameAs"
+      (is (str/includes? html "\"sameAs\":[\"https://www.tiktok.com/@zandytouch\",\"https://www.facebook.com/nanyonjo.sandra.1/\"]"))))
+  (testing "Instagram appears once configured"
+    (let [html (document/render-page {:state (assoc (pages/initial-state) :route (routes/match-url "/about")
+                                                    :site (assoc-in site [:social :instagram] "https://www.instagram.com/zandytouch") :page {:status :ok})
+                                      :base-url "https://example.test" :assets {}})]
+      (is (str/includes? html "icon-instagram"))
+      (is (str/includes? html "https://www.instagram.com/zandytouch\"]"))))
+  (testing "no social list and no sameAs when nothing is configured"
+    (let [html (document/render-page {:state (assoc (pages/initial-state) :route (routes/match-url "/about")
+                                                    :site (assoc site :social {:tiktok nil :facebook nil :instagram nil}) :page {:status :ok})
+                                      :base-url "https://example.test" :assets {}})]
+      (is (not (str/includes? html "site-footer__social")))
+      (is (not (str/includes? html "Follow us")))
+      (is (not (str/includes? html "sameAs"))))))

@@ -8,10 +8,20 @@
   (is (= :category (:name (routes/match-url "/categories/skincare"))))
   (is (= :admin-orders (:name (routes/match-url "/admin"))))
   (is (= :admin-new-product (:name (routes/match-url "/admin/new-product"))))
+  (is (= :admin-product-import (:name (routes/match-url "/admin/product-import"))))
+  (is (nil? (routes/match-url "/admin/photos")) "the photo library no longer exists")
   (is (= "orderTerms" (get-in (routes/match-url "/legal/order-terms") [:data :policy])))
   (is (nil? (routes/match-url "/nope")))
   (testing "trailing slash"
     (is (= :shop (:name (routes/match-url "/shop/"))))))
+
+(deftest help-routes
+  (is (= :admin-help (:name (routes/match-url "/admin/help"))))
+  (is (= :admin-help (:name (routes/match-url "/admin/help/"))))
+  (let [m (routes/match-url "/admin/help/stock")]
+    (is (= :admin-help-topic (:name m)))
+    (is (= {:topic "stock"} (:params m)))
+    (is (= :staff (get-in m [:data :access])))))
 
 (deftest query-strings
   (is (= {:q "a b" :page "2"} (:query (routes/match-url "/shop?q=a%20b&page=2"))))

@@ -30,7 +30,7 @@
            [:phone :string] [:whatsapp nilable-string] [:email nilable-string]
            [:shop-address nilable-string]
            [:opening-hours [:vector [:map [:days :string] [:opens :string] [:closes :string]]]]
-           [:social [:map [:instagram nilable-string] [:tiktok nilable-string]]]
+           [:social [:map [:instagram nilable-string] [:tiktok nilable-string] [:facebook nilable-string]]]
            [:countries [:vector [:map [:code :string] [:name :string] [:cities [:vector :string]]]]]
            [:allow-other-city? :boolean]]]
    [:catalog [:map [:max-quantity-per-line pos-int?] [:low-stock-threshold pos-int?]]]

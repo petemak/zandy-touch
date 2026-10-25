@@ -31,10 +31,13 @@
    ["/admin/products" {:name :admin-products :shell? true :admin? true :access :staff}]
    ["/admin/new-product" {:name :admin-new-product :shell? true :admin? true :access :staff}]
    ["/admin/products/:id" {:name :admin-product :shell? true :admin? true :access :staff}]
-   ["/admin/photos" {:name :admin-photos :shell? true :admin? true :access :staff}]
+   ["/admin/product-import" {:name :admin-product-import :shell? true :admin? true :access :staff}]
    ["/admin/inbox" {:name :admin-inbox :shell? true :admin? true :access :staff}]
    ["/admin/account" {:name :admin-account :shell? true :admin? true :access :staff}]
-   ["/admin/staff" {:name :admin-staff :shell? true :admin? true :access :owner}]])
+   ["/admin/staff" {:name :admin-staff :shell? true :admin? true :access :owner}]
+   ;; A13. Both are for signed-in staff; the topic itself is filtered by role in the view.
+   ["/admin/help" {:name :admin-help :shell? true :admin? true :access :staff}]
+   ["/admin/help/:topic" {:name :admin-help-topic :shell? true :admin? true :access :staff}]])
 
 (def router (r/router routes))
 

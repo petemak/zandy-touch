@@ -61,7 +61,7 @@
                            {:id (str "p" (inc i)) :slug (slugify nm) :sku (str "SEED-" sku) :name nm :brand (if own? "Zandy Touch" "Sample Brand")
                             :isOwnBrand own? :categorySlug cat :price price :stock stock :size size :status "published"
                             :featured (zero? (mod i 5)) :version 1 :createdAt (now) :updatedAt (now)
-                            :photos [(str "ph" (inc i))]})
+                            :photos [{:id (str "ph" (inc i)) :alt nil}]})
                          seed))
          :orders []
          :idem {}
@@ -89,10 +89,12 @@
                   {:type "list" :items ["First point" "Second point"]}]
      :contentHash "sha256:stub" :effectiveFrom "2026-10-01T00:00:00Z"}))
 
-(defn img [p]
-  (when-let [ph (first (:photos p))]
-    {:id ph :alt (str (:name p) " on a plain background")
-     :urls {:thumb (str "/media/" ph "-thumb.webp") :medium (str "/media/" ph "-medium.webp") :large (str "/media/" ph "-large.webp")}}))
+(defn image-of [ph]
+  {:id (:id ph) :alt (:alt ph)
+   :urls {:thumb (str "/media/" (:id ph) "-thumb.webp") :medium (str "/media/" (:id ph) "-medium.webp") :large (str "/media/" (:id ph) "-large.webp")}})
+
+(defn img [p] (some-> (first (:photos p)) image-of))
+(defn images-of [p] (mapv image-of (:photos p)))
 
 (defn avail [p] (if (pos? (:stock p)) "available" "soldOut"))
 (defn max-q [p] (min 10 (:stock p)))
@@ -130,7 +132,7 @@
             :shortDescription (str "A " (str/lower-case (:name p)) " for everyday use.")
             :description (str "About the " (:name p) ".\n\nUse as directed. This is stub text for development.")
             :size (:size p) :howToUse "Apply a small amount daily." :ingredients nil
-            :images (vec (keep identity [(img p)]))
+            :images (images-of p)
             :related (vec (map summary (take 4 (remove #(= (:id p) (:id %)) (filter #(= (:categorySlug p) (:categorySlug %)) (published))))))
             :updatedAt (:updatedAt p)})))
 
@@ -196,8 +198,236 @@
 (defn admin-product [p]
   (merge (summary p) {:sku (:sku p) :stockQuantity (:stock p) :lowStock (<= 1 (:stock p) 5) :status (:status p)
                       :version (:version p) :updatedBy {:id "u1" :name "Sandra"} :updatedAt (:updatedAt p)
-                      :createdAt (:createdAt p) :size (:size p) :description "Stub description." :howToUse nil :ingredients nil
-                      :shortDescription "Short description." :images (vec (keep identity [(img p)]))}))
+                      :createdAt (:createdAt p) :size (:size p) :description (or (:description p) "Stub description.") :howToUse (:howToUse p)
+                      :ingredients (:ingredients p) :shortDescription (or (:shortDescription p) "Short description.")
+                      :images (images-of p)}))
+
+;; ---- product pictures, bulk import and publishing (api-contract.md 8.2) ----
+
+(defn find-product [id] (some #(when (= id (:id %)) %) (:products @db)))
+
+(defn reorder-photos
+  "PATCH `images`: the list replaces the product's pictures; unknown ids are ignored."
+  [photos images]
+  (let [by-id (into {} (map (juxt :id identity)) photos)]
+    (vec (keep (fn [{:keys [id alt]}] (when-let [ph (by-id id)] (assoc ph :alt alt))) images))))
+
+(defn multipart-parts
+  "Parts of a multipart body that carry a file: [{:name :filename :content}].
+  The stub reads the body as text, which is enough for file names and CSV."
+  [raw]
+  (let [raw (str raw)
+        boundary (first (str/split-lines raw))]
+    (when (str/starts-with? boundary "--")
+      (vec (keep (fn [part]
+                   (let [[hdr content] (str/split part #"\r\n\r\n" 2)]
+                     (when-let [fname (second (re-find #"filename=\"([^\"]*)\"" (str hdr)))]
+                       {:name (second (re-find #"name=\"([^\"]*)\"" hdr)) :filename fname
+                        :content (str/replace (or content "") #"\r\n$" "")})))
+                 (str/split raw (re-pattern (java.util.regex.Pattern/quote boundary))))))))
+
+(defn with-idempotency
+  "Same key and body replays the first response; same key, other body is 409.
+  The body is compared by file names and contents, not raw bytes: a multipart
+  boundary differs on every request."
+  [headers scope raw f]
+  (let [k (get headers "Idempotency-key")
+        body (mapv (juxt :filename :content) (multipart-parts raw))]
+    (cond
+      (nil? k) (err 400 "missingIdempotencyKey" "Idempotency-Key header is required.")
+      :else (let [slot [scope k] stored (get-in @db [:idem slot])]
+              (cond
+                (and stored (not= (:body-hash stored) (hash body))) (err 409 "idempotencyKeyReused" "This key was used with different content.")
+                stored [200 (:response stored) {"Idempotent-Replayed" "true"}]
+                :else (let [[status resp :as r] (f)]
+                        (when (= 200 status) (swap! db assoc-in [:idem slot] {:body-hash (hash body) :response resp}))
+                        r))))))
+
+(def image-extensions #{"jpg" "jpeg" "png" "webp"})
+
+(defn file-ext [fname] (some-> (re-find #"\.([^.]+)$" fname) second str/lower-case))
+
+(defn file-problem [{:keys [filename content]}]
+  (cond
+    (not (image-extensions (file-ext filename))) {:code "unsupportedMediaType" :message "Only JPEG, PNG or WebP pictures can be used."}
+    (> (count (str content)) (* 5 1024 1024)) {:code "fileTooLarge" :message "This file is larger than 5 MB."}))
+
+(defn add-photo! [product-id fname position]
+  (let [ph {:id (str "up-" (subs (str (random-uuid)) 0 8)) :alt nil}]
+    (swap! db update :products
+           (fn [ps] (mapv (fn [p] (if (= product-id (:id p))
+                                    (-> p
+                                        (update :version inc)
+                                        (update :photos (fn [phs]
+                                                          (if (and position (<= 1 position (count phs))) (assoc phs (dec position) ph) (conj phs ph)))))
+                                    p)) ps)))
+    ph))
+
+(defn attached-result [fname p ph position]
+  {:filename fname :status "attached" :productId (:id p) :sku (:sku p) :position position :image (image-of ph) :error nil})
+
+(defn rejected-result [fname code msg]
+  {:filename fname :status "rejected" :productId nil :sku nil :position nil :image nil :error {:code code :message msg}})
+
+(defn attach-to-product [id body]
+  (let [files (multipart-parts body)]
+    (cond
+      (nil? (find-product id)) (err 404 "notFound" "Not found.")
+      (or (empty? files) (> (count files) 6)) (err 422 "validationFailed" "Please check the highlighted fields." [{:field "files" :code "invalid" :message "Send 1 to 6 files."}])
+      :else
+      (let [items (mapv (fn [{:keys [filename] :as f}]
+                          (let [p (find-product id)]
+                            (cond
+                              (file-problem f) (rejected-result filename (:code (file-problem f)) (:message (file-problem f)))
+                              (>= (count (:photos p)) 6) (rejected-result filename "tooManyImages" "This product already has 6 pictures.")
+                              :else (let [ph (add-photo! id filename nil)]
+                                      (attached-result filename (find-product id) ph (count (:photos (find-product id))))))))
+                        files)]
+        [200 {:items items :product (admin-product (find-product id))}]))))
+
+(defn sku-match
+  "Longest SKU that the file name starts with (case-insensitive), and the
+  optional -1..-6 position."
+  [fname]
+  (let [base (str/replace fname #"\.[^.]+$" "")
+        lower (str/lower-case base)
+        p (->> (:products @db) (filter #(and (:sku %) (str/starts-with? lower (str/lower-case (:sku %))))) (sort-by (comp - count :sku)) first)]
+    (when p
+      (let [rest (subs base (count (:sku p)))]
+        [p (some-> (re-matches #"-([1-6])" rest) second parse-long)]))))
+
+(defn attach-by-sku [body]
+  (let [files (multipart-parts body)]
+    (if (or (empty? files) (> (count files) 20))
+      (err 422 "validationFailed" "Please check the highlighted fields." [{:field "files" :code "invalid" :message "Send 1 to 20 files."}])
+      [200 {:items (mapv (fn [{:keys [filename] :as f}]
+                           (if-let [prob (file-problem f)]
+                             (rejected-result filename (:code prob) (:message prob))
+                             (if-let [[p position] (sku-match filename)]
+                               (let [p (find-product (:id p))]
+                                 (if (and (nil? position) (>= (count (:photos p)) 6))
+                                   (rejected-result filename "tooManyImages" "This product already has 6 pictures.")
+                                   (let [ph (add-photo! (:id p) filename position)
+                                         p2 (find-product (:id p))]
+                                     (attached-result filename p2 ph (or position (count (:photos p2)))))))
+                               (rejected-result filename "unknownSku" "No product has a SKU at the start of this file name."))))
+                         files)}])))
+
+(def import-columns ["sku" "name" "brand" "ownBrand" "category" "price" "shortDescription" "description" "size" "howToUse" "ingredients" "featured" "openingStock"])
+
+(def import-template
+  (str (str/join "," import-columns) "\n"
+       "ZT-SKIN-001,Brightening cream 50 g,Zandy Touch,yes,skincare,45000,A daily cream.,A longer description.,50 g,Apply in the evening.,,no,20\n"
+       "ZT-PERF-002,Eau de parfum 50 ml,Sample Brand,no,Perfumes,120000,,,50 ml,,,yes,5\n"))
+
+(defn parse-csv
+  "Minimal CSV reader: quotes, doubled quotes, comma or semicolon (from the header line)."
+  [text]
+  (let [text (str/replace (str text) #"^﻿" "")
+        delim (let [h (first (str/split-lines text))] (if (> (count (re-seq #";" h)) (count (re-seq #"," h))) \; \,))]
+    (loop [chars (seq text) field (StringBuilder.) row [] rows [] in-q? false]
+      (if-let [c (first chars)]
+        (cond
+          in-q? (cond (and (= c \") (= \" (second chars))) (do (.append field \") (recur (nnext chars) field row rows true))
+                      (= c \") (recur (next chars) field row rows false)
+                      :else (do (.append field c) (recur (next chars) field row rows true)))
+          (= c \") (recur (next chars) field row rows true)
+          (= c delim) (recur (next chars) (StringBuilder.) (conj row (str field)) rows false)
+          (= c \return) (recur (next chars) field row rows false)
+          (= c \newline) (recur (next chars) (StringBuilder.) [] (conj rows (conj row (str field))) false)
+          :else (do (.append field c) (recur (next chars) field row rows false)))
+        (cond-> rows (or (seq row) (pos? (.length field))) (conj (conj row (str field))))))))
+
+(defn yes-no [v] (case (str/lower-case (str v)) ("yes" "y" "true") true ("no" "n" "false" "") false nil))
+
+(defn find-category [v]
+  (let [v (str/lower-case (str/trim v))]
+    (some #(when (or (= v (:slug %)) (= v (str/lower-case (:name %)))) (:slug %)) categories)))
+
+(defn row-fields
+  "Validated fields of one row: [fields errors]. Only non-empty cells count."
+  [row new?]
+  (let [cell (fn [k] (str/trim (str (get row k ""))))
+        err (fn [field code msg] {:field field :code code :message msg})
+        errors (cond-> []
+                 (and new? (str/blank? (cell "name"))) (conj (err "name" "required" "A new product needs a name."))
+                 (and new? (str/blank? (cell "brand"))) (conj (err "brand" "required" "A new product needs a brand."))
+                 (and new? (str/blank? (cell "category"))) (conj (err "category" "required" "A new product needs a category."))
+                 (and (not (str/blank? (cell "category"))) (nil? (find-category (cell "category")))) (conj (err "category" "invalid" (str "No category called " (cell "category") ".")))
+                 (and (not (str/blank? (cell "price"))) (not (re-matches #"\d+" (str/replace (cell "price") #"[, ]" "")))) (conj (err "price" "invalid" "Price must be a whole number of shillings."))
+                 (and (not (str/blank? (cell "ownBrand"))) (nil? (yes-no (cell "ownBrand")))) (conj (err "ownBrand" "invalid" "Use yes or no."))
+                 (and (not (str/blank? (cell "featured"))) (nil? (yes-no (cell "featured")))) (conj (err "featured" "invalid" "Use yes or no."))
+                 (and (not (str/blank? (cell "openingStock"))) (not (re-matches #"\d+" (cell "openingStock")))) (conj (err "openingStock" "invalid" "Opening stock must be a whole number.")))]
+    [(cond-> {}
+       (not (str/blank? (cell "name"))) (assoc :name (cell "name"))
+       (not (str/blank? (cell "brand"))) (assoc :brand (cell "brand"))
+       (not (str/blank? (cell "ownBrand"))) (assoc :isOwnBrand (yes-no (cell "ownBrand")))
+       (not (str/blank? (cell "category"))) (assoc :categorySlug (find-category (cell "category")))
+       (not (str/blank? (cell "price"))) (assoc :price (some-> (re-matches #"\d+" (str/replace (cell "price") #"[, ]" "")) parse-long))
+       (not (str/blank? (cell "shortDescription"))) (assoc :shortDescription (cell "shortDescription"))
+       (not (str/blank? (cell "description"))) (assoc :description (cell "description"))
+       (not (str/blank? (cell "size"))) (assoc :size (cell "size"))
+       (not (str/blank? (cell "howToUse"))) (assoc :howToUse (cell "howToUse"))
+       (not (str/blank? (cell "ingredients"))) (assoc :ingredients (cell "ingredients"))
+       (not (str/blank? (cell "featured"))) (assoc :featured (yes-no (cell "featured")))
+       (not (str/blank? (cell "openingStock"))) (assoc :stock (or (parse-long (cell "openingStock")) 0)))
+     errors]))
+
+(defn import-products [body dry-run?]
+  (let [file (first (multipart-parts body))
+        table (when file (parse-csv (:content file)))
+        header (some->> (first table) (mapv #(str/lower-case (str/trim %))))
+        canonical (into {} (map (juxt str/lower-case identity)) import-columns)
+        header (some->> header (mapv #(get canonical % %)))
+        fail (fn [field code msg] (err 422 "validationFailed" "Please check the highlighted fields." [{:field field :code code :message msg}]))]
+    (cond
+      (nil? file) (fail "file" "required" "Choose a CSV file.")
+      (not (some #{"sku"} header)) (fail "file" "missingColumn" "The first line must contain a sku column.")
+      (some #(not (some #{%} import-columns)) header) (fail "file" "unknownColumn" (str "Unknown column: " (first (remove (set import-columns) header))))
+      (> (count (rest table)) 500) (fail "file" "tooManyRows" "A file can have at most 500 rows.")
+      :else
+      (let [seen (atom #{})
+            rows (vec (map-indexed
+                       (fn [i cells]
+                         (let [row (zipmap header cells)
+                               sku (str/trim (str (get row "sku" "")))
+                               existing (when-not (str/blank? sku) (some #(when (= (str/lower-case sku) (str/lower-case (str (:sku %)))) %) (:products @db)))
+                               [fields errors] (row-fields row (nil? existing))
+                               errors (cond-> errors
+                                        (str/blank? sku) (conj {:field "sku" :code "required" :message "Every row needs a SKU."})
+                                        (@seen (str/lower-case sku)) (conj {:field "sku" :code "duplicateSku" :message "This SKU appears more than once in the file."}))
+                               warnings (if (and existing (contains? fields :stock)) [{:field "openingStock" :code "ignoredForExisting"}] [])
+                               line (+ 2 i)]
+                           (swap! seen conj (str/lower-case sku))
+                           (cond
+                             (seq errors) {:line line :sku sku :status "rejected" :productId nil :warnings [] :errors errors}
+                             existing
+                             (do (when-not dry-run?
+                                   (swap! db update :products (fn [ps] (mapv #(if (= (:id existing) (:id %)) (-> % (merge (dissoc fields :stock)) (update :version inc)) %) ps))))
+                                 {:line line :sku sku :status "updated" :productId (:id existing) :warnings warnings :errors []})
+                             :else
+                             (let [id (str "p" (inc (count (:products @db))))]
+                               (when-not dry-run?
+                                 (swap! db update :products conj
+                                        (merge {:id id :slug (str (slugify (:name fields)) "-" (str/lower-case sku)) :sku sku :isOwnBrand false :price nil :stock 0 :status "draft"
+                                                :featured false :version 1 :createdAt (now) :updatedAt (now) :photos []}
+                                               fields)))
+                               {:line line :sku sku :status "created" :productId (if dry-run? nil id) :warnings [] :errors []}))))
+                       (rest table)))
+            n #(count (filter (fn [r] (= % (:status r))) rows))]
+        [200 {:dryRun dry-run? :summary {:rows (count rows) :created (n "created") :updated (n "updated") :rejected (n "rejected")} :rows rows}]))))
+
+(defn publish-one! [id]
+  (let [p (find-product id)
+        errors (cond-> []
+                 (nil? p) (conj {:field "id" :code "notFound"})
+                 (and p (nil? (:price p))) (conj {:field "price" :code "priceRequired"})
+                 (and p (empty? (:photos p))) (conj {:field "images" :code "imageRequired"}))]
+    (if (seq errors)
+      {:productId id :status "rejected" :errors errors}
+      (do (swap! db update :products (fn [ps] (mapv #(if (= id (:id %)) (assoc % :status "published" :updatedAt (now)) %) ps)))
+          {:productId id :status "published"}))))
+
 
 (defn order-list-item [o]
   (let [sub (order-total (:items o))]
@@ -221,7 +451,7 @@
       [200 {:businessName "Zandy Touch" :tagline "Beauty with Confidence" :phone "+256706105779" :whatsapp "+256706105779"
             :email "sandratonanyonjo@gmail.com" :shopAddress "Ring roads, Rubaga Rd, opposite Red Cross, Kampala, Uganda"
             :openingHours [{:days "Monday to Saturday" :opens "08:00" :closes "22:00"} {:days "Sunday" :opens "10:00" :closes "21:30"}]
-            :social {:instagram nil :tiktok nil} :currency "UGX" :paymentMethods ["cash" "mobileMoney"] :maxQuantityPerLine 10}]
+            :social {:tiktok "https://www.tiktok.com/@zandytouch" :facebook "https://www.facebook.com/nanyonjo.sandra.1/" :instagram nil} :currency "UGX" :paymentMethods ["cash" "mobileMoney"] :maxQuantityPerLine 10}]
       [:get ["api" "delivery-areas"]]
       [200 {:countries [{:code "UG" :name "Uganda" :cities ["Kampala" "Entebbe" "Jinja" "Mbale" "Mbarara" "Fort Portal"]}] :allowOtherCity false}]
       [:get ["api" "categories"]]
@@ -326,16 +556,20 @@
         (let [id (str "p" (inc (count (:products @db))))
               p {:id id :slug (slugify (:name body)) :sku (:sku body) :name (:name body) :brand (:brand body) :isOwnBrand (boolean (:isOwnBrand body))
                  :categorySlug (:categorySlug body) :price (:price body) :stock (or (:stockQuantity body) 0)
-                 :status (:status body) :featured (boolean (:featured body)) :version 1 :createdAt (now) :updatedAt (now) :photos (mapv :id (:images body))}]
+                 :status (:status body) :featured (boolean (:featured body)) :version 1 :createdAt (now) :updatedAt (now) :photos []}]
           (if (and (= "published" (:status body)) (nil? (:price body)))
             (err 422 "validationFailed" "Please check the highlighted fields." [{:field "price" :code "priceRequired" :message "A product needs a price before it can be published."}])
             (do (swap! db update :products conj p) [201 (admin-product p)])))
         (and (= :patch method) (= "products" (nth seg 2 nil)))
         (let [id (nth seg 3)]
-          (swap! db update :products (fn [ps] (mapv #(if (= id (:id %))
-                                                       (-> % (merge (-> (select-keys body [:name :brand :isOwnBrand :price :status :featured :sku :categorySlug]))) (update :version inc))
+          (if (not= (:version body) (:version (find-product id)))
+            (err 409 "versionConflict" "This product was updated a moment ago.")
+            (do (swap! db update :products (fn [ps] (mapv #(if (= id (:id %))
+                                                       (-> % (merge (-> (select-keys body [:name :brand :isOwnBrand :price :status :featured :sku :categorySlug :shortDescription :description :size :howToUse :ingredients])))
+                                                           (cond-> (contains? body :images) (assoc :photos (reorder-photos (:photos %) (:images body))))
+                                                           (update :version inc))
                                                        %) ps)))
-          [200 (admin-product (some #(when (= id (:id %)) %) (:products @db)))])
+          [200 (admin-product (some #(when (= id (:id %)) %) (:products @db)))])))
         (and (= :delete method) (= "products" (nth seg 2 nil)))
         (do (swap! db update :products (fn [ps] (mapv #(if (= (nth seg 3) (:id %)) (assoc % :status "archived") %) ps))) [204 nil])
         (and (= :post method) (= "stock-movements" (nth seg 4 nil)))
@@ -347,15 +581,16 @@
                         [201 {:movement m :stockQuantity after :availability (if (pos? after) "available" "soldOut")}])))
         (and (= :get method) (= "stock-movements" (nth seg 4 nil)))
         [200 (paged (reverse (filter #(= (nth seg 3) (:productId %)) (:movements @db))) q 25)]
-        (and (= :get method) (= ["api" "admin" "photos"] seg))
-        [200 (paged (map (fn [p] {:id (first (:photos p)) :filename (str (:sku p) "-1.jpg") :urls (:urls (img p)) :assignedProductIds [(:id p)] :uploadedAt (:createdAt p)}) (take 12 (:products @db))) q 40)]
-        (and (= :post method) (= ["api" "admin" "photos"] seg))
-        [201 {:items (mapv (fn [fname] {:filename fname :status "stored"
-                                        :photo {:id (str "up-" (slugify fname)) :urls {:thumb "/media/ph1-thumb.webp" :medium "/media/ph1-medium.webp" :large "/media/ph1-large.webp"} :assignedProductIds []}
-                                        :suggestedProductId nil :error nil})
-                           (re-seq #"(?<=filename=\")[^\"]+" (str body)))}]
-        (and (= :post method) (= ["api" "admin" "photo-assignments"] seg))
-        [200 {:results (mapv #(assoc % :status "assigned") (:assignments body))}]
+        (and (= :post method) (= "images" (nth seg 4 nil)) (= 5 (count seg)))
+        (with-idempotency headers (str path) body (fn [] (attach-to-product (nth seg 3) body)))
+        (and (= :post method) (= ["api" "admin" "product-images"] seg))
+        (with-idempotency headers (str path) body (fn [] (attach-by-sku body)))
+        (and (= :post method) (= ["api" "admin" "product-imports"] seg))
+        (with-idempotency headers (str path "?" (get q "dryRun")) body (fn [] (import-products body (= "true" (q "dryRun")))))
+        (and (= :get method) (= ["api" "admin" "product-import-template"] seg))
+        [200 import-template {"Content-Type" "text/csv; charset=utf-8" "Content-Disposition" "attachment; filename=\"zandy-touch-products.csv\""}]
+        (and (= :post method) (= ["api" "admin" "product-publications"] seg))
+        [200 {:results (mapv publish-one! (:productIds body))}]
         (and (= :get method) (= ["api" "admin" "contact-messages"] seg)) [200 (paged (reverse (:messages @db)) q 25)]
         (and (= :get method) (= ["api" "admin" "subscribers"] seg))
         [200 (paged (map-indexed (fn [i s] {:id (str "s" i) :email (:email s) :phone (:phone s) :subscribedAt (now) :source (:source s) :active true :unsubscribeUrl "http://stub/unsubscribe?token=x"}) (:subscribers @db)) q 50)]
@@ -401,7 +636,7 @@
             (send! 200 (.getBytes (svg-for id variant) StandardCharsets/UTF_8) "image/svg+xml" {"Cache-Control" "public, max-age=31536000, immutable"})
             (let [[status b extra] (handle method path q body headers)
                   public-get? (and (= :get method) (not (str/includes? path "/admin")) (not (str/includes? path "/auth")))]
-              (send! status (.getBytes (or (some-> b jwrite) "") StandardCharsets/UTF_8) "application/json"
+              (send! status (.getBytes (cond (string? b) b b (jwrite b) :else "") StandardCharsets/UTF_8) "application/json"
                      (merge {"Cache-Control" (cond (not (<= 200 status 299)) "no-store" public-get? "public, max-age=30" :else "no-store")} extra))))
           (catch Throwable t
             (send! 500 (.getBytes (jwrite {:error {:code "internalError" :message (str "stub: " (.getMessage t))}}) StandardCharsets/UTF_8) "application/json" {})))))))

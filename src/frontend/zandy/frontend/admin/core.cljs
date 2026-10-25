@@ -1,8 +1,10 @@
 (ns zandy.frontend.admin.core
-  "Staff area views A1 to A12. Client-rendered only. All views are pure
+  "Staff area views A1 to A13. Client-rendered only. All views are pure
   functions of the state; handlers are data."
   (:require [clojure.string :as str]
-            [zandy.frontend.admin.state]
+            [zandy.frontend.admin.help :as help]
+            [zandy.frontend.admin.state :as admin-state]
+            [zandy.frontend.admin.widgets :as widgets]
             [zandy.shared.format :as fmt]
             [zandy.shared.routes :as routes]
             [zandy.shared.ui.core :as ui]
@@ -51,10 +53,21 @@
 (def nav-items
   [[:admin-orders "/admin" "Orders" #{:admin-orders :admin-order}]
    [:admin-products "/admin/products" "Products" #{:admin-products :admin-new-product :admin-product}]
-   [:admin-photos "/admin/photos" "Photos" #{:admin-photos}]
+   [:admin-product-import "/admin/product-import" "Import" #{:admin-product-import}]
    [:admin-inbox "/admin/inbox" "Inbox" #{:admin-inbox}]
    [:admin-staff "/admin/staff" "Staff" #{:admin-staff} :owner]
-   [:admin-account "/admin/account" "My account" #{:admin-account}]])
+   [:admin-account "/admin/account" "My account" #{:admin-account}]
+   [:admin-help "/admin/help" "Help" #{:admin-help :admin-help-topic}]])
+
+(defn- page-title
+  "The page's one h1 with the small \"How do I...?\" link beside it. No link while
+  a temporary password must be changed (every other page redirects away then)."
+  [state & children]
+  (let [user (get-in state [:admin :session :user])]
+    [:div.page-head
+     (into [:h1.page-title] children)
+     (when-not (:mustChangePassword user)
+       (help/how-do-i (get-in state [:route :name]) (:role user)))]))
 
 (defn- shell [state content]
   (let [user (get-in state [:admin :session :user])
@@ -139,7 +152,7 @@
         f (forms state :password)]
     (shell state
            [:div
-            [:h1.page-title "My account"]
+            (page-title state "My account")
             (when (:mustChangePassword user)
               (ui/notice {:kind :warning :live? true} "You are using a temporary password. Choose your own password to continue."))
             [:div.admin-card
@@ -168,7 +181,7 @@
         d (data state :orders)]
     (shell state
            [:div
-            [:h1.page-title "Orders"]
+            (page-title state "Orders")
             (with-data d
               (fn [{:keys [items counts] :as body}]
                 [:div
@@ -249,7 +262,7 @@
                    fee-n (some-> fee-val str (str/replace "," "") parse-long)]
                [:div
                 (ui/breadcrumb [["Orders" "/admin"] [(:orderNumber order) nil]])
-                [:h1.page-title (:orderNumber order) " " (ui/order-status-pill st)]
+                (page-title state (:orderNumber order) " " (ui/order-status-pill st))
                 [:p (str "Placed " (fmt/iso->date-time (:placedAt order)))]
                 [:div.admin-grid
                  [:div
@@ -321,6 +334,26 @@
 ;; ---------------------------------------------------------------------------
 ;; A6 Products
 
+(defn- restore-rejected-notice
+  "Shown when the shop refused to publish a product being restored: the reasons,
+  and the offer to restore it as a draft instead."
+  [state]
+  (when-let [{:keys [id name reasons]} (:restore-rejected (admin-ui state))]
+    [:div#restore-rejected {:tabindex "-1"}
+     (ui/notice {:kind :error :live? true}
+                [:p [:strong (str (or name "This product") " cannot be published yet.")]]
+                [:ul (for [[i r] (map-indexed vector reasons)] ^{:key i} [:li r])]
+                [:p "Add what is missing on the product page, or restore it as a draft now and publish it later."]
+                [:div.row-actions
+                 (ui/button {:on-click [[:admin/restore id name "draft"]]} "Restore as draft instead")
+                 (ui/link (str "/admin/products/" id) {:class ["button" "button--secondary"]} "Edit product")
+                 (ui/button {:variant :secondary :on-click [[:admin/restore-dismiss]]} "Dismiss")])]))
+
+(defn- restore-button [state p]
+  (ui/button {:disabled? (= (:id p) (:restoring (admin-ui state)))
+              :on-click [[:admin/restore (:id p) (:name p) "published"]]}
+             (if (= (:id p) (:restoring (admin-ui state))) "Restoring" "Restore")))
+
 (defn- stock-cell [p]
   (let [n (:stockQuantity p)]
     [:span
@@ -340,8 +373,7 @@
                              :value (:qty v) :error (:qty errs) :on-input [:form/input :dialog :qty [:event/target.value]]})
              (ui/select-input {:id "stock-reason" :label "Reason" :value (:reason v) :error (:reason errs) :placeholder "Choose a reason"
                                :on-change [:form/input :dialog :reason [:event/target.value]]
-                               :options [["restock" "Restock"] ["stocktake" "Stocktake"] ["shopSale" "Sold in the shop"]
-                                         ["damagedOrLost" "Damaged or lost"] ["returnedGoods" "Returned goods"] ["other" "Other"]]})
+                               :options fmt/stock-reasons})
              (ui/text-field {:id "stock-note" :label "Note" :optional? true :value (:note v) :on-input [:form/input :dialog :note [:event/target.value]]})
              [:div.dialog__actions
               (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
@@ -353,7 +385,8 @@
         dlg (:dialog (admin-ui state))]
     (shell state
            [:div
-            [:div.section__head [:h1.page-title "Products"] (ui/link-button "/admin/new-product" {} "New product")]
+            [:div.section__head (page-title state "Products") (ui/link-button "/admin/new-product" {} "New product")]
+            (restore-rejected-notice state)
             (with-data d
               (fn [{:keys [items counts] :as body}]
                 [:div
@@ -377,7 +410,7 @@
                          [:td {:data-label "Photo"} (when-let [u (get-in p [:image :urls :thumb])] [:img {:src u :alt "" :width 48 :height 60 :loading "lazy"}])]
                          [:td {:data-label "Name"} (ui/link (str "/admin/products/" (:id p)) {} (:name p))]
                          [:td {:data-label "SKU"} (:sku p)]
-                         [:td {:data-label "Category"} (:categorySlug p)]
+                         [:td {:data-label "Category"} (admin-state/category-name state (:categorySlug p))]
                          [:td.num {:data-label "Price"} (if (:price p) (fmt/ugx (:price p)) [:strong "No price"])]
                          [:td {:data-label "Stock"} (stock-cell p)]
                          [:td {:data-label "Status"} (ui/pill (case (:status p) "published" :success "archived" :muted :info) (str/capitalize (:status p)))]
@@ -385,15 +418,16 @@
                          [:td {:data-label "Actions"}
                           [:div.row-actions
                            (ui/link (str "/admin/products/" (:id p)) {:class ["button" "button--secondary"]} "Edit")
-                           (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :stock :id (:id p) :current (:stockQuantity p) :name (:name p) :defaults {:mode "add"}}]]} "Adjust stock")
                            (if (= "archived" (:status p))
-                             nil
-                             (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :archive :id (:id p) :name (:name p)}]]} "Remove"))]]])]]])
+                             (restore-button state p)
+                             (list
+                              (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :stock :id (:id p) :current (:stockQuantity p) :name (:name p) :defaults {:mode "add"}}]]} "Adjust stock")
+                              (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :archive :id (:id p) :name (:name p)}]]} "Remove")))]]])]]])
                  (pager "/admin/products" (select-keys query [:status :stock :q]) body)]))
             (case (:type dlg)
               :stock (stock-dialog state (:id dlg) (:current dlg) (:name dlg))
               :archive (dialog {:title (str "Remove " (:name dlg) "?")}
-                               [:p "This archives the product. It leaves the shop, search and sitemap. Orders and stock history are kept. You can restore it by publishing it again."]
+                               [:p "This archives the product. It leaves the shop, search and sitemap. Orders and stock history are kept. You can bring it back later from the Archived tab with Restore."]
                                [:div.dialog__actions (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
                                 (ui/button {:on-click [[:admin/archive (:id dlg)]]} "Archive product")])
               nil)])))
@@ -401,43 +435,35 @@
 ;; ---------------------------------------------------------------------------
 ;; A7 / A8 Product form
 
-(defn- image-list [state]
-  (let [imgs (get-in state [:forms :product :values :images])
-        photos (get-in (data state :photos) [:body :items])]
-    [:div
-     [:h3 "Photos"]
-     (when-let [e (get-in state [:forms :product :errors :images])] [:p.field__error (ui/icon :warning :sm) [:span e]])
-     (if (empty? imgs)
-       [:p "No photos yet. Pick from the library below, or upload on the Photos page."]
-       [:ol.photo-grid
-        (for [[i im] (map-indexed vector imgs)]
-          ^{:key (:id im)}
-          [:li
-           (when-let [u (get-in im [:urls :thumb])] [:img {:src u :alt "" :width 96 :height 120}])
-           [:p (if (zero? i) "Main photo" (str "Photo " (inc i)))]
-           (ui/text-field {:id (str "alt-" i) :label "Alt text" :optional? true :value (:alt im) :on-input [:admin/product-image-alt i [:event/target.value]]})
-           [:div.row-actions
-            (ui/button {:variant :secondary :disabled? (zero? i) :on-click [[:admin/product-image-move i -1]] :attrs {:aria-label "Move earlier"}} "Earlier")
-            (ui/button {:variant :secondary :disabled? (= i (dec (count imgs))) :on-click [[:admin/product-image-move i 1]] :attrs {:aria-label "Move later"}} "Later")
-            (ui/button {:variant :secondary :on-click [[:admin/product-image-remove i]]} "Remove")]])])
-     [:details
-      [:summary "Choose from the photo library"]
-      (if (empty? photos)
-        [:p "The library is empty."]
-        [:ul.photo-grid
-         (for [ph photos]
-           ^{:key (:id ph)}
-           [:li (when-let [u (get-in ph [:urls :thumb])] [:img {:src u :alt "" :width 96 :height 120 :loading "lazy"}])
-            (ui/button {:variant :secondary :on-click [[:admin/product-image-add (select-keys ph [:id :urls])]]} "Add")])])]]))
+(defn- picture-section
+  "A8: the ProductImageManager. A7: pictures need the product to exist, so the
+  section says so and appears in full after the first Save."
+  [state product-id]
+  (if (nil? product-id)
+    [:section#pictures.admin-card {:tabindex "-1" :aria-labelledby "pictures-title"}
+     [:h2#pictures-title "Pictures"]
+     [:p "Save the product first, then add its pictures here. A product needs at least one picture before it can be published."]]
+    (let [pi (forms state :product-images)]
+      [:section#pictures.admin-card {:tabindex "-1"}
+       (widgets/product-image-manager
+        {:images (get-in state [:forms :product :values :images])
+         :saved-images (get-in (data state :product) [:body :images])
+         :error (get-in state [:forms :product :errors :images])
+         :upload {:status (:status pi) :items (:items pi)}
+         :save (:save pi)})])))
 
 (defn- product-form [state product-id]
   (let [f (forms state :product)
         v (:values f)
         errs (:errors f)
         in (fn [k] [:form/input :product k [:event/target.value]])
-        cats ui/nav-categories]
+        ;; names from GET /api/categories; the fixed six until that has loaded
+        cats (if-let [loaded (seq (admin-state/categories state))]
+               (mapv (fn [c] [(:slug c) (or (not-empty (:name c)) (:slug c))]) loaded)
+               ui/nav-categories)
+        archived? (= "archived" (:status v))]
     [:form {:novalidate true :on {:submit [[:dom/prevent-default] [:admin/product-save product-id]]}}
-     (ui/error-summary (vec (for [[k id] [[:name "pf-name"] [:brand "pf-brand"] [:category "pf-category"] [:price "pf-price"] [:sku "pf-sku"] [:images "pf-name"]] :let [m (get errs k)] :when m] {:id id :message m})))
+     (ui/error-summary (vec (for [[k id] [[:name "pf-name"] [:brand "pf-brand"] [:category "pf-category"] [:price "pf-price"] [:sku "pf-sku"] [:images "pictures"]] :let [m (get errs k)] :when m] {:id id :message m})))
      (when-let [m (:form errs)] (ui/notice {:kind :error :live? true} m))
      [:section.admin-card
       [:h2 "Basics"]
@@ -463,15 +489,20 @@
       (ui/text-field {:id "pf-size" :label "Size" :optional? true :value (:size v) :on-input (in :size)})
       (ui/textarea-input {:id "pf-how" :label "How to use" :optional? true :value (:how-to-use v) :on-input (in :how-to-use)})
       (ui/textarea-input {:id "pf-ing" :label "Ingredients" :optional? true :value (:ingredients v) :on-input (in :ingredients)})]
-     [:section.admin-card (image-list state)]
+     (picture-section state product-id)
      [:section.admin-card
       [:h2 "Publishing"]
-      (ui/radio-group {:name "pf-status" :legend "Status" :value (:status v) :on-change [:form/set :product :status]
-                       :options [["draft" "Draft (not visible to customers)"] ["published" "Published"]]})
+      (if archived?
+        ;; Draft or Published would both be wrong here: the product is archived
+        [:div.field
+         [:p.field__label "Status"]
+         [:p (ui/pill :muted "Archived") " Removed from the shop. Use Restore at the top of this page to bring it back."]]
+        (ui/radio-group {:name "pf-status" :legend "Status" :value (:status v) :on-change [:form/set :product :status]
+                         :options [["draft" "Draft (not visible to customers)"] ["published" "Published"]]}))
       (ui/checkbox {:id "pf-featured" :label "Featured on the home page" :checked? (:featured? v) :on-change [:form/input :product :featured? [:event/target.checked]]})]
      (when (= :done (:status f)) (ui/notice {:kind :success :live? true} "Saved."))
      [:div.row-actions
-      (ui/button {:type "submit" :disabled? (= :submitting (:status f))} (if (= :submitting (:status f)) "Saving" "Save"))
+      (ui/button {:type "submit" :variant (when archived? :secondary) :disabled? (= :submitting (:status f))} (if (= :submitting (:status f)) "Saving" "Save"))
       (when (and product-id (= "published" (:status v)))
         (ui/link-button (str "/products/" (get-in state [:admin :data :product :body :slug])) {:variant :secondary} "View on shop"))]]))
 
@@ -483,104 +514,208 @@
      [:p [:strong {:class (cond (zero? (:stockQuantity p)) "stock-zero" (:lowStock p) "stock-low")} (:stockQuantity p)] " " (cond (zero? (:stockQuantity p)) (ui/badge :sold-out) (:lowStock p) (ui/badge :low-stock))]
      (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :stock :id (:id p) :current (:stockQuantity p) :name (:name p) :defaults {:mode "add"}}]]} "Adjust stock")
      [:h3 (ui/icon :history :sm) " Recent movements"]
-     (if (empty? movements)
-       [:p "No movements yet."]
-       [:div.table-wrap
-        [:table.data-table
-         [:thead [:tr [:th "When"] [:th "Type"] [:th.num "Change"] [:th.num "After"] [:th "Reason"] [:th "Who"]]]
-         [:tbody
-          (for [m movements]
-            ^{:key (:id m)}
-            [:tr [:td {:data-label "When"} (fmt/iso->date-time (:at m))]
-             [:td {:data-label "Type"} (if (:orderNumber m) (str (:type m) " " (:orderNumber m)) (:type m))]
-             [:td.num {:data-label "Change"} [:span {:class (if (pos? (:delta m)) "stock-in" "stock-out")} (str (when (pos? (:delta m)) "+") (:delta m))]]
-             [:td.num {:data-label "After"} (:quantityAfter m)]
-             [:td {:data-label "Reason"} (or (:reason m) "")]
-             [:td {:data-label "Who"} (or (get-in m [:by :name]) "Customer order")]])]]])
+     (widgets/stock-movement-list movements)
      (when (= :stock (:type dlg)) (stock-dialog state (:id dlg) (:current dlg) (:name dlg)))]))
 
 (defn- new-product-page [state]
   (shell state
          [:div
           (ui/breadcrumb [["Products" "/admin/products"] ["New product" nil]])
-          [:h1.page-title "New product"]
-          (when (nil? (get-in state [:forms :product :init]))
-            nil)
-          (with-data (data state :photos) (fn [_] (product-form state nil)))]))
+          (page-title state "New product")
+          (product-form state nil)]))
+
+(defn- archived-notice
+  "A8 for an archived product: it says so first, and Restore is the main action."
+  [state p]
+  [:div
+   (ui/notice {:kind :warning :id "archived-notice"}
+              [:p [:strong "This product is removed from the shop (archived)."]]
+              [:p "Customers cannot see it, search finds nothing and it is out of the sitemap. Orders and stock history are kept."]
+              (restore-button state p))
+   (restore-rejected-notice state)])
 
 (defn- edit-product-page [state]
   (shell state
          (with-data (data state :product)
            (fn [p]
-             [:div
-              (ui/breadcrumb [["Products" "/admin/products"] [(:name p) nil]])
-              [:h1.page-title (:name p)]
-              [:p.field__hint (str "Last updated " (fmt/iso->date-time (:updatedAt p)) (when (:updatedBy p) (str " by " (get-in p [:updatedBy :name]))))]
-              (stock-panel state p)
-              (product-form state (:id p))
-              [:section.admin-card
-               [:h2 "Remove product"]
-               [:p "Removing archives the product. Orders and stock history are kept."]
-               (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :archive :id (:id p) :name (:name p)}]]} "Remove from shop")
-               (when (= :archive (:type (:dialog (admin-ui state))))
-                 (let [dlg (:dialog (admin-ui state))]
-                   (dialog {:title (str "Remove " (:name dlg) "?")}
-                           [:p "This archives the product. It leaves the shop, search and sitemap."]
-                           [:div.dialog__actions (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
-                            (ui/button {:on-click [[:admin/archive (:id dlg)]]} "Archive product")])))]]))))
+             (let [archived? (= "archived" (:status p))]
+               [:div
+                (ui/breadcrumb [["Products" "/admin/products"] [(:name p) nil]])
+                (page-title state (:name p) (when archived? [:span " " (ui/pill :muted "Archived")]))
+                (when archived? (archived-notice state p))
+                [:p.field__hint (str "Last updated " (fmt/iso->date-time (:updatedAt p)) (when (:updatedBy p) (str " by " (get-in p [:updatedBy :name]))))]
+                (stock-panel state p)
+                (product-form state (:id p))
+                (when-not archived?
+                  [:section.admin-card
+                   [:h2 "Remove product"]
+                   [:p "Removing archives the product. Orders and stock history are kept."]
+                   (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :archive :id (:id p) :name (:name p)}]]} "Remove from shop")
+                   (when (= :archive (:type (:dialog (admin-ui state))))
+                     (let [dlg (:dialog (admin-ui state))]
+                       (dialog {:title (str "Remove " (:name dlg) "?")}
+                               [:p "This archives the product. It leaves the shop, search and sitemap."]
+                               [:div.dialog__actions (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
+                                (ui/button {:on-click [[:admin/archive (:id dlg)]]} "Archive product")])))])])))))
 
 ;; ---------------------------------------------------------------------------
-;; A9 Photos
+;; ---------------------------------------------------------------------------
+;; A9 Bulk product import
 
-(defn- photos-page [state]
-  (let [up (forms state :upload)
-        query (get-in state [:route :query])
-        products (get-in (data state :products) [:body :items])]
-    (shell state
+(defn- kilobytes [n] (str (max 1 (long (Math/ceil (/ n 1024)))) " KB"))
+
+(defn- csv-step [state]
+  (let [f (forms state :import-csv)
+        {:keys [dry real]} f
+        report (or (:report real) (:report dry))
+        real? (some? (:report real))
+        running? (or (= :running (:status dry)) (= :running (:status real)))
+        file-errors (seq (concat (:errors dry) (:errors real)))
+        field-error (:error f)
+        described (str/join " " (cond-> [(ui/field-hint-id "import-csv")] field-error (conj (ui/field-error-id "import-csv"))))]
+    [:section.admin-card {:aria-labelledby "import-step1"}
+     [:h2#import-step1 "Step 1: the spreadsheet"]
+     [:p "Fill in one row per product in Excel or Google Sheets and save the file as CSV UTF-8. New products are created as drafts. A row whose SKU already exists updates that product. An import never changes the stock of an existing product; use Adjust stock for that."]
+     [:p (ui/external-link "/api/admin/product-import-template" {:class ["button" "button--secondary"] :download "zandy-touch-products.csv"}
+                           "Download the template")]
+     [:details
+      [:summary "Columns in the file"]
+      [:p [:code "sku"] " (required, the key), " [:code "name"] ", " [:code "brand"] ", " [:code "ownBrand"] " (yes or no), "
+       [:code "category"] " (the category name, for example Body care), " [:code "price"] " (whole UGX, empty for a draft), "
+       [:code "shortDescription"] ", " [:code "description"] ", " [:code "size"] ", " [:code "howToUse"] ", "
+       [:code "ingredients"] ", " [:code "featured"] " (yes or no) and " [:code "openingStock"] " (new products only). "
+       "A new product needs a name, brand and category."]]
+     (ui/field-wrap {:id "import-csv" :label "Your CSV file" :hint "CSV, up to 500 rows and 1 MB." :error field-error}
+                    [:input.input {:id "import-csv" :type "file" :accept ".csv,text/csv" :disabled running?
+                                   :aria-describedby described :aria-invalid (when field-error "true")
+                                   :on {:change [[:admin/csv-picked [:event/files]]]}}])
+     (when-let [file (:file f)]
+       [:p "Selected: " [:strong (:name file)] (str " (" (kilobytes (:size file)) ")")])
+     [:div.row-actions
+      (ui/button {:variant :secondary :disabled? (or (nil? (:file f)) running?) :on-click [[:admin/csv-check :dry]]}
+                 (if (= :running (:status dry)) "Checking the file" "Check the file"))
+      (ui/button {:disabled? (not (admin-state/can-import? f)) :on-click [[:admin/csv-check :real]]}
+                 (if (= :running (:status real)) "Importing" "Import the file"))]
+     (when (and (:file f) (not real?) (not (admin-state/can-import? f)))
+       [:p.field__hint "Check the file first. Importing is available once the check finds rows to apply."])
+     (when file-errors
+       (ui/notice {:kind :error :live? true}
+                  [:p "The file could not be imported. Nothing was changed."]
+                  [:ul (for [[i line] (map-indexed vector file-errors)] ^{:key i} [:li line])]))
+     (when real?
+       (ui/notice {:kind :success :live? true} "Import finished. Add the pictures in step 2, then publish in step 3."))
+     (when report
+       (widgets/import-result-list
+        {:heading (if real? "Import result" "Check result: nothing has been changed yet")
+         :summary (widgets/summary-text (:summary report) (not real?))
+         :items (widgets/csv-row-items (:rows report) (not real?))}))]))
+
+(defn- pictures-step [state]
+  (let [f (forms state :import-pictures)
+        {:keys [queue results index total]} f
+        uploading? (= :uploading (:status f))
+        done? (= :done (:status f))
+        batches (if (pos? (or total 0)) (long (Math/ceil (/ total admin-state/batch-size))) 0)
+        sent (min (or total 0) (* (or index 0) admin-state/batch-size))
+        attached (count (filter #(= "attached" (:status %)) results))
+        retryable (count (filter :retry-file results))]
+    [:section.admin-card {:aria-labelledby "import-step2"}
+     [:h2#import-step2 "Step 2: the pictures"]
+     [:p "Name each picture after its product's SKU, with an optional -1 to -6 for the order, for example "
+      [:code "ZT-SKIN-001-1.jpg"] " and " [:code "ZT-SKIN-001-2.jpg"] ". A picture with a position replaces the one at that position. "
+      "A picture whose SKU matches no product is rejected and not kept. A product can have up to 6 pictures."]
+     (widgets/upload-dropzone {:id "import-pictures" :label "Choose the product pictures"
+                               :hint "JPEG, PNG or WebP, up to 5 MB each. Any number of files; they are sent 20 at a time."
+                               :accept "image/jpeg,image/png,image/webp" :multiple? true :busy? uploading?
+                               :on-files [:admin/pictures-picked]})
+     (when (and (seq queue) (not uploading?))
+       [:div.row-actions
+        [:span (str (count queue) (if (= 1 (count queue)) " picture is" " pictures are") " ready to upload.")]
+        (ui/button {:on-click [[:admin/pictures-upload]]} (str "Upload " (count queue) (if (= 1 (count queue)) " picture" " pictures")))])
+     (when uploading?
+       (widgets/progress-bar {:id "import-progress" :value (or index 0) :max batches
+                              :label (str "Uploading batch " (min (inc (or index 0)) batches) " of " batches
+                                          " (" sent " of " total " pictures sent)")}))
+     (when done?
+       (ui/notice {:kind (if (= attached (count results)) :success :warning) :live? true}
+                  (str "Upload finished: " attached " attached, " (- (count results) attached) " not attached.")))
+     (when (seq results)
+       (widgets/import-result-list {:heading "Results per picture" :items (widgets/picture-items results)}))
+     (when (or (pos? retryable) (seq results))
+       [:div.row-actions
+        (when (pos? retryable)
+          (ui/button {:on-click [[:admin/pictures-retry]]} (str "Try again for " retryable (if (= 1 retryable) " picture" " pictures") " that did not upload")))
+        (when (and (seq results) (not uploading?))
+          (ui/button {:variant :secondary :on-click [[:admin/pictures-clear]]} "Clear results"))])]))
+
+(defn- publish-outcome [{:keys [status error results]}]
+  (case status
+    :error (ui/notice {:kind :error :live? true} error)
+    :done (let [ok (filter #(= "published" (:status %)) results)
+                bad (remove #(= "published" (:status %)) results)]
+            (ui/notice {:kind (if (seq bad) :warning :success) :live? true}
+                       [:p (str (count ok) (if (= 1 (count ok)) " product published." " products published."))]
+                       (when (seq bad)
+                         [:div [:p "These stay drafts:"]
+                          [:ul (for [r bad]
+                                 ^{:key (:productId r)}
+                                 [:li (str (or (:name r) "A product") ": "
+                                           (str/join ", " (for [e (:errors r)] (get widgets/code-text (:code e) (:code e)))))])]])))
+    nil))
+
+(defn- drafts-step [state]
+  (let [review (forms state :import-review)
+        imported? (seq (:imported-ids review))
+        all? (= :all (:scope review))]
+    [:section.admin-card {:aria-labelledby "import-step3"}
+     [:h2#import-step3 "Step 3: review and publish"]
+     [:p "Drafts are invisible to customers. A draft can be published when it has a price, at least one picture and a category."]
+     (with-data (data state :drafts)
+       (fn [_]
+         (let [items (admin-state/drafts-shown state)
+               complete (filter (comp empty? admin-state/draft-lacks) items)
+               running? (= :running (get-in review [:publish :status]))]
            [:div
-            [:h1.page-title "Photo library"]
-            [:section.admin-card {:aria-labelledby "up-title"}
-             [:h2#up-title "Upload photos"]
-             [:form {:on {:submit [[:dom/prevent-default] [:admin/upload]]}}
-              [:div.dropzone
-               (ui/icon :upload :lg)
-               [:label.field__label {:for "photo-files"} "Choose up to 20 photos (JPEG, PNG or WebP, 5 MB each)"]
-               [:input {:id "photo-files" :type "file" :name "files" :multiple true :accept "image/jpeg,image/png,image/webp"}]
-               [:p.field__hint "Name files starting with the product SKU so we can suggest the product."]]
-              (when (:error up) (ui/notice {:kind :error :live? true} (:error up)))
-              (ui/button {:type "submit" :disabled? (= :submitting (:status up))} (if (= :submitting (:status up)) "Uploading" "Upload"))]
-             (when (:items up)
-               [:ul
-                (for [[i it] (map-indexed vector (:items up))]
-                  ^{:key i}
-                  [:li (if (= "stored" (:status it))
-                         [:span (ui/icon :check :sm) (str " " (:filename it) ": stored")
-                          (when (:suggestedProductId it)
-                            (let [pid (:suggestedProductId it) nm (some #(when (= pid (:id %)) (:name %)) products)]
-                              [:span " " (ui/button {:variant :secondary :on-click [[:admin/assign (get-in it [:photo :id]) pid]]} (str "Attach to " (or nm "suggested product")))]))]
-                         [:span (ui/icon :warning :sm) (str " " (:filename it) ": " (get-in it [:error :message]))])])])]
-            [:ul.tabs
-             [:li (ui/link "/admin/photos" {:class "tab" :aria-current (when-not (:unassigned query) "true")} "All photos")]
-             [:li (ui/link "/admin/photos?unassigned=true" {:class "tab" :aria-current (when (:unassigned query) "true")} "Unassigned only")]]
-            (with-data (data state :photos)
-              (fn [{:keys [items]}]
-                (if (empty? items)
-                  (ui/empty-state {:title "No photos here"})
-                  [:ul.photo-grid
-                   (for [ph items]
-                     ^{:key (:id ph)}
-                     [:li (when-let [u (get-in ph [:urls :thumb])] [:img {:src u :alt (str "Photo " (:filename ph)) :width 160 :height 200 :loading "lazy"}])
-                      [:p (:filename ph)]
-                      (ui/select-input {:id (str "assign-" (:id ph)) :label "Attach to product" :placeholder "Choose a product" :value ""
-                                        :on-change [:admin/assign (:id ph) [:event/target.value]]
-                                        :options (map (fn [p] [(:id p) (:name p)]) products)})
-                      (ui/button {:variant :secondary :on-click [[:admin/dialog {:type :photo :id (:id ph)}]]} "Delete")])])))
-            (when (= :photo (:type (:dialog (admin-ui state))))
-              (let [dlg (:dialog (admin-ui state))]
-                (dialog {:title "Delete this photo?"}
-                        [:p "It is removed from any product that uses it. A published product left with no photos becomes a draft."]
-                        [:div.dialog__actions (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
-                         (ui/button {:on-click [[:admin/photo-delete (:id dlg)]]} "Delete photo")])))])))
+            (when imported?
+              [:p (if all? "Showing every draft in the shop. " "Showing the products from this import. ")
+               (ui/button {:variant :secondary :on-click [[:admin/drafts-scope (if all? :imported :all)]]}
+                          (if all? "Show only this import" "Show all drafts"))])
+            (if (empty? items)
+              (ui/empty-state {:title "No drafts to review" :text "Imported products appear here until they are published."})
+              [:div.table-wrap
+               [:table.data-table
+                [:thead [:tr [:th "Picture"] [:th "Name"] [:th "SKU"] [:th "Category"] [:th "Still needs"] [:th "Fix"]]]
+                [:tbody
+                 (for [p items]
+                   (let [lacks (admin-state/draft-lacks p)]
+                     ^{:key (:id p)}
+                     [:tr
+                      [:td {:data-label "Picture"} (when-let [u (get-in p [:image :urls :thumb])] [:img {:src u :alt "" :width 48 :height 60 :loading "lazy"}])]
+                      [:td {:data-label "Name"} (:name p)]
+                      [:td {:data-label "SKU"} (:sku p)]
+                      [:td {:data-label "Category"} (if (str/blank? (:categorySlug p)) "None" (admin-state/category-name state (:categorySlug p)))]
+                      [:td {:data-label "Still needs"}
+                       (if (empty? lacks)
+                         (ui/pill :success "Ready to publish")
+                         [:span.pill-row (for [l lacks] ^{:key l} (ui/pill :warning l))])]
+                      [:td {:data-label "Fix"}
+                       (when (seq lacks)
+                         (ui/link (str "/admin/products/" (:id p)) {:class ["button" "button--secondary"]}
+                                  "Edit product" (ui/visually-hidden (str ": " (:name p)))))]]))]]])
+            (publish-outcome (:publish review))
+            [:div.row-actions
+             (ui/button {:disabled? (or (empty? complete) running?) :on-click [[:admin/publish-complete]]}
+                        (if running? "Publishing" (str "Publish all complete drafts (" (count complete) ")")))
+             (ui/link-button "/admin/products" {:variant :secondary} "Go to products")]])))]))
+
+(defn- import-page [state]
+  (shell state
+         [:div
+          (page-title state "Import products")
+          [:p "Add or update many products at once, with their pictures. Work through the three steps; you can leave and come back, and drafts stay in the shop until you publish them."]
+          (csv-step state)
+          (pictures-step state)
+          (drafts-step state)]))
 
 ;; ---------------------------------------------------------------------------
 ;; A10 Inbox
@@ -589,7 +724,7 @@
   (let [tab (or (get-in state [:route :query :tab]) "messages")]
     (shell state
            [:div
-            [:h1.page-title "Messages and subscribers"]
+            (page-title state "Messages and subscribers")
             [:ul.tabs
              [:li (ui/link "/admin/inbox" {:class "tab" :aria-current (when (= "messages" tab) "true")} "Messages")]
              [:li (ui/link "/admin/inbox?tab=subscribers" {:class "tab" :aria-current (when (= "subscribers" tab) "true")} "Subscribers")]]
@@ -625,7 +760,7 @@
            (if (:forbidden (get-in state [:admin :data]))
              (ui/notice {:kind :error} "Only the owner can manage staff accounts.")
              [:div
-              [:h1.page-title "Staff accounts"]
+              (page-title state "Staff accounts")
               (when tp
                 (ui/notice {:kind :warning :live? true}
                            [:p (str "Temporary password for " (:for tp) ". It is shown only once. Pass it on in person or by WhatsApp; it is never emailed.")]
@@ -666,6 +801,16 @@
                 nil)]))))
 
 ;; ---------------------------------------------------------------------------
+;; A13 Help
+
+(defn- help-page [state]
+  (let [role (admin-state/role state)]
+    (shell state
+           (case (get-in state [:route :name])
+             :admin-help (help/list-view role)
+             :admin-help-topic (help/topic-view role (get-in state [:route :params :topic]))))))
+
+;; ---------------------------------------------------------------------------
 
 (defn view [state]
   (let [session (get-in state [:admin :session])
@@ -683,8 +828,9 @@
         :admin-products (products-page state)
         :admin-new-product (new-product-page state)
         :admin-product (edit-product-page state)
-        :admin-photos (photos-page state)
+        :admin-product-import (import-page state)
         :admin-inbox (inbox-page state)
         :admin-account (account-page state)
         :admin-staff (staff-page state)
+        (:admin-help :admin-help-topic) (help-page state)
         [:main#main.container (ui/spinner-text "Loading")]))))

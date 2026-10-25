@@ -1,3 +1,7 @@
+#+TITLE: Document Title
+#+AUTHOR: PJM
+#+DATE: 2026-10-25
+
 
 * Prompts
 ** 1. Brand strategist to architect (design)
@@ -16,3 +20,56 @@ Spawn two teammates to build the site from design-spec.md and api-contract.md:
   
 Have them confirm they're both reading the same api-contract.md before either writes code.
 Wait for both to finish before proceeding.
+
+
+** 2a. Repeat build agents
+Spawn two teammates again to update the site from design-spec.md and api-contract.md:
+
+- One teammate using the backend-clojure agent type, owning its paths in architecture.md section 4.1
+- One teammate using the frontend-cljs agent type, owning its paths in architecture.md section 4.1
+
+Changes to implement:
+1. Bulk product import (api-contract.md section 8.2, design-spec.md A7–A9, user-journeys.md Journey 3):
+   CSV import with dry run and template, SKU-named bulk pictures, per-product picture upload, bulk publish.
+   Remove the photo library: the /api/admin/photos and /api/admin/photo-assignments endpoints, the /admin/photos page and their tests.
+   Pictures always belong to a product.
+2. Social links (api-contract.md site-info, business-context.md "Owner decisions"):
+   add social.facebook; configure the TikTok and Facebook URLs;
+   show both in the footer and in the JSON-LD sameAs;
+   Instagram stays hidden until configured.
+
+Have both confirm that `sha256sum api-contract.md` gives 9330872b0e5ad5f6fd614261eaf5c7d2058489aab52f19ef02e8187f41aecfd4 before writing code.
+Run all tests, the dependency check scripts and clj-kondo before reporting. Wait for both to finish.
+
+** 2b. Run servers and test
+Run each command in its own terminal, starting from the project root (/home/pjm/dev/learn/zandy-touch).
+
+1. Backend (port 8082). This command also creates the admin (owner) account:
+
+   #+BEGIN_SRC bash
+     ZANDY_PROFILE=dev PORT=8082
+     SESSION_HMAC_SECRET=dev-secret-change-me-0123456789
+     OWNER_EMAIL=sandratonanyonjo@gmail.com
+     OWNER_INITIAL_PASSWORD='ChooseAPassword10'
+     clojure -M:run
+   #+END_SRC
+
+2. Frontend server (port 8081):
+
+   #+BEGIN_SRC bash
+     cd ssr && PORT=8081
+     API_BASE_URL=http://127.0.0.1:8082
+     API_TIMEOUT_MS=3000
+     SITE_BASE_URL=http://127.0.0.1:8090
+     clojure -M:run
+   #+END_SRC
+
+
+3. Dev proxy (port 8090). This puts the site and the API on one address:
+
+    #+BEGIN_SRC bash
+      cd ssr && clojure -M:proxy 8090 8082 8081
+    #+END_SRC
+   
+
+Then open http://127.0.0.1:8090. The admin is at http://127.0.0.1:8090/admin.

@@ -7,10 +7,11 @@
   {:businessName "Zandy Touch" :tagline "Beauty with Confidence" :phone "+256706105779" :whatsapp "+256706105779"
    :email "sandratonanyonjo@gmail.com" :shopAddress "Ring roads, Rubaga Rd, opposite Red Cross, Kampala, Uganda"
    :openingHours [{:days "Monday to Saturday" :opens "08:00" :closes "22:00"} {:days "Sunday" :opens "10:00" :closes "21:30"}]
-   :social {:instagram nil :tiktok nil} :currency "UGX" :paymentMethods ["cash" "mobileMoney"] :maxQuantityPerLine 10})
+   :social {:tiktok "https://www.tiktok.com/@zandytouch" :facebook "https://www.facebook.com/nanyonjo.sandra.1/" :instagram nil} :currency "UGX" :paymentMethods ["cash" "mobileMoney"] :maxQuantityPerLine 10})
 
 (def site-minimal (assoc site :whatsapp nil :email nil :shopAddress nil :openingHours nil))
-(def site-social (assoc-in site [:social] {:instagram "//www.instagram.com/example" :tiktok "//www.tiktok.com/@example"}))
+(def site-social (assoc-in site [:social] {:tiktok "https://www.tiktok.com/@zandytouch" :facebook "https://www.facebook.com/nanyonjo.sandra.1/" :instagram "https://www.instagram.com/example"}))
+(def site-no-social (assoc-in site [:social] {:tiktok nil :facebook nil :instagram nil}))
 
 (def sample-photo
   "A neutral inline SVG so scenes need no image files."

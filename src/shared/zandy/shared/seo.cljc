@@ -44,7 +44,7 @@
 
 (defn- store-ld [site base]
   (let [{:keys [businessName tagline phone email shopAddress openingHours social]} site
-        same-as (vec (remove nil? [(:instagram social) (:tiktok social)]))]
+        same-as (vec (remove str/blank? [(:tiktok social) (:facebook social) (:instagram social)]))]
     (cond-> {"@type" "Store"
              "@id" (str base "/#store")
              "name" (or businessName "Zandy Touch")
@@ -155,6 +155,15 @@
         :order-placed {:title "Order Received | Zandy Touch" :description "Your Zandy Touch order has been received." :path "/order-placed" :noindex? true}
         :track-order {:title "Track Your Order | Zandy Touch" :description "Check the status of your Zandy Touch order with your order number and phone." :path "/track-order" :noindex? true}
         :unsubscribe {:title "Unsubscribe | Zandy Touch" :description "Stop receiving Zandy Touch news." :path "/unsubscribe" :noindex? true}
+        :admin-product-import {:title (str "Import products | " biz " Admin")
+                               :description "Bulk import of products and their pictures for Zandy Touch staff."
+                               :path "/admin/product-import" :noindex? true}
+        :admin-help {:title (str "Staff help | " biz " Admin")
+                     :description "Step-by-step guides for the Zandy Touch staff area: orders, products, stock, import, messages and passwords."
+                     :path "/admin/help" :noindex? true}
+        :admin-help-topic {:title (str (or (get-in state [:admin :help-title]) "Help topic") " | Staff help | " biz " Admin")
+                           :description "A step-by-step guide for the Zandy Touch staff area."
+                           :path (or (:path route) "/admin/help") :noindex? true}
         {:title (str "Staff area | " biz " Admin")
          :description "Zandy Touch staff area."
          :path (or (:path route) "/admin") :noindex? true}))))

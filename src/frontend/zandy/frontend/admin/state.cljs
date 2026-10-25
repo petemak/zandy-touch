@@ -3,6 +3,7 @@
   (handle state action) -> {:state :fx}. Every request goes through the
   server's authorization; hiding a button here is convenience only."
   (:require [clojure.string :as str]
+            [zandy.frontend.admin.help :as help]
             [zandy.frontend.state :as s :refer [handle ret]]
             [zandy.shared.format :as fmt]
             [zandy.shared.routes :as routes]))
@@ -11,6 +12,14 @@
 
 (defn session [state] (get-in state [:admin :session]))
 (defn role [state] (get-in (session state) [:user :role]))
+
+(def drafts-page-size 100)
+(def drafts-max-pages 5)
+
+(def drafts-request
+  "Step 3 of the import lists drafts. The first page loads with the route; more
+  pages follow (up to 500 products, the most one import can hold)."
+  {:path "/api/admin/products" :query {:status "draft" :pageSize drafts-page-size :sort "updatedAtDesc"}})
 
 (defn route-requests
   "Data each admin route needs: key -> request map."
@@ -26,17 +35,19 @@
                                            (:status query) (assoc :status (:status query))
                                            (:stock query) (assoc :stock (:stock query))
                                            (:q query) (assoc :q (:q query)))}}
-      :admin-new-product {:photos {:path "/api/admin/photos" :query {:pageSize 100}}}
       :admin-product {:product {:path (str "/api/admin/products/" (:id params))}
-                      :movements {:path (str "/api/admin/products/" (:id params) "/stock-movements")}
-                      :photos {:path "/api/admin/photos" :query {:pageSize 100}}}
-      :admin-photos {:photos (cond-> {:path "/api/admin/photos" :query {:pageSize 40}}
-                              (= "true" (:unassigned query)) (assoc-in [:query :unassigned] "true"))
-                     :products {:path "/api/admin/products" :query {:pageSize 100}}}
+                      :movements {:path (str "/api/admin/products/" (:id params) "/stock-movements")}}
+      :admin-product-import {:drafts drafts-request}
       :admin-inbox {:messages {:path "/api/admin/contact-messages"}
                     :subscribers {:path "/api/admin/subscribers"}}
       :admin-staff {:staff {:path "/api/admin/staff"}}
       {})))
+
+(defn- drafts-next-page-fx
+  "Request for the next page of drafts, or nil when all are loaded."
+  [{:keys [page pageSize totalItems]}]
+  (when (and page pageSize totalItems (< page drafts-max-pages) (< (* page pageSize) totalItems))
+    [:fx/request (assoc-in drafts-request [:query :page] (inc page)) [:admin/drafts-page]]))
 
 (defn- load-fx [state]
   (vec (for [[k req] (route-requests state)]
@@ -56,6 +67,28 @@
 
 (declare product-values)
 
+(defn categories
+  "Categories from GET /api/categories, cached for the session (nil until loaded)."
+  [state]
+  (get-in state [:admin :categories]))
+
+(defn category-name
+  "Display name for a category slug; the slug itself when the name is missing."
+  [state slug]
+  (fmt/category-name (categories state) slug))
+
+(defn- categories-fx
+  "Load the categories once per session."
+  [state]
+  (when (nil? (categories state))
+    [:fx/request {:path "/api/categories"} [:admin/categories-loaded]]))
+
+(defmethod handle :admin/categories-loaded [state [_ {:keys [status body]}]]
+  (if (and (= 200 status) (vector? (:items body)))
+    (ret (assoc-in state [:admin :categories] (:items body)))
+    ;; names fall back to slugs; the next admin page tries again
+    (ret state)))
+
 (defn- enter-with-session [state]
   (let [{:keys [name data]} (:route state)
         user (:user (session state))]
@@ -71,10 +104,12 @@
 
       :else
       (let [new? (= :admin-new-product name)
-            state (cond-> (loading state)
+            state (cond-> (-> (loading state) (assoc-in [:admin :ui :restore-rejected] nil)
+                              (assoc-in [:admin :help-title]
+                                    (when (= :admin-help-topic name) (help/title-for (:role user) (get-in state [:route :params :topic])))))
                     (and new? (not= :new (get-in state [:forms :product :init])))
                     (assoc-in [:forms :product] {:values (product-values {}) :init :new}))]
-        (ret state (into [[:fx/head]] (load-fx state)))))))
+        (ret state (into [[:fx/head] (categories-fx state)] (load-fx state)))))))
 
 (defmethod handle :admin/enter [state _]
   (let [{:keys [data]} (:route state)]
@@ -108,7 +143,8 @@
     (= 200 status)
     (let [st (assoc-in state [:admin :data k] {:status :ok :body body})
           init? (and (= :product k) (not= (:id body) (get-in state [:forms :product :init])))]
-      (ret st (when init? [[:fx/dispatch [:admin/product-init body]]])))
+      (ret st [(when init? [:fx/dispatch [:admin/product-init body]])
+               (when (= :drafts k) (drafts-next-page-fx body))]))
     :else (ret (assoc-in state [:admin :data k] {:status :error :error (get-in body [:error :message])}))))
 
 (defmethod handle :admin/reload [state _]
@@ -284,7 +320,9 @@
    :status (or (:status p) "draft") :stock "0" :images (vec (map #(select-keys % [:id :alt :urls]) (:images p)))})
 
 (defmethod handle :admin/product-init [state [_ p]]
-  (ret (assoc-in state [:forms :product] {:values (product-values p) :init (or (:id p) :new)})))
+  (ret (-> state
+           (assoc-in [:forms :product] {:values (product-values p) :init (or (:id p) :new)})
+           (update :forms dissoc :product-images))))
 
 (defn- product-body [v new?]
   (let [t #(some-> % str str/trim not-empty)
@@ -294,21 +332,25 @@
              :size (t (:size v)) :howToUse (t (:how-to-use v)) :ingredients (t (:ingredients v))
              :featured (boolean (:featured? v)) :status (:status v) :sku (t (:sku v))
              :images (mapv (fn [i] (cond-> {:id (:id i)} (not (str/blank? (:alt i))) (assoc :alt (:alt i)))) (:images v))}
-      new? (assoc :stockQuantity (or (some-> (t (:stock v)) parse-long) 0)))))
+      ;; an archived product is brought back only by Restore, never by Save
+      (= "archived" (:status v)) (dissoc :status)
+      new? (-> (dissoc :images) (assoc :stockQuantity (or (some-> (t (:stock v)) parse-long) 0))))))
 
-(defn- product-errors [v]
+(defn- product-errors [v new?]
   (cond-> {}
     (< (count (str/trim (str (:name v)))) 2) (assoc :name "Enter the product name.")
     (str/blank? (:brand v)) (assoc :brand "Enter the brand.")
     (str/blank? (:category v)) (assoc :category "Choose a category.")
     (and (= "published" (:status v)) (str/blank? (str (:price v)))) (assoc :price "A product needs a price before it can be published.")
-    (and (= "published" (:status v)) (empty? (:images v))) (assoc :images "A product needs at least one photo before it can be published.")))
+    (and (= "published" (:status v)) (empty? (:images v))) (assoc :images (if new?
+                                                                                                    "A product needs at least one picture before it can be published. Save it as a draft, add pictures, then publish."
+                                                                                                    "A product needs at least one picture before it can be published."))))
 
 (defmethod handle :admin/product-save [state [_ product-id :as action]]
   (let [form (get-in state [:forms :product])
         v (:values form)
-        errors (product-errors v)
-        new? (nil? product-id)]
+        new? (nil? product-id)
+        errors (product-errors v new?)]
     (cond
       (seq errors) (ret (assoc-in state [:forms :product :errors] errors) [[:fx/focus "error-summary"]])
       (and new? (nil? (:key form))) (ret state [[:fx/uuid [:admin/key-ready :product action]]])
@@ -338,13 +380,6 @@
       (= 401 status) (to-login state)
       :else (ret (form-err state :product "We could not save the product. Please try again.")))))
 
-(defmethod handle :admin/product-image-add [state [_ photo]]
-  (let [imgs (get-in state [:forms :product :values :images])]
-    (if (or (>= (count imgs) 6) (some #(= (:id photo) (:id %)) imgs))
-      (ret state)
-      (ret (-> state (update-in [:forms :product :values :images] conj {:id (:id photo) :urls (:urls photo) :alt ""})
-               (update-in [:forms :product :errors] dissoc :images))))))
-
 (defmethod handle :admin/product-image-remove [state [_ i]]
   (ret (update-in state [:forms :product :values :images] (fn [v] (vec (concat (subvec v 0 i) (subvec v (inc i))))))))
 
@@ -367,6 +402,71 @@
     (ret (assoc-in state [:admin :ui :notice] "Product removed from the shop (archived).")
          [[:fx/dispatch (if (= :admin-product (get-in state [:route :name])) [:nav/go "/admin/products"] [:admin/reload])]])
     (ret (assoc-in state [:admin :ui :notice] "Could not archive the product."))))
+
+;; Restore (api-contract.md 8.1): PATCH {version, status: "published"} restores an
+;; archived product and the publishing rule applies. The products list does not
+;; carry `version`, so a restore started there reads the product first.
+
+(def restore-reason-text
+  {"priceRequired" "It has no price."
+   "imageRequired" "It has no picture."
+   "categoryRequired" "It has no category."})
+
+(defn restore-reasons
+  "Reasons text from the details of a 422, or a general sentence."
+  [body]
+  (let [details (get-in body [:error :details])
+        lines (distinct (for [{:keys [code message field]} details]
+                          (or (restore-reason-text code)
+                              (not-empty message)
+                              (when (= "categorySlug" field) (restore-reason-text "categoryRequired"))
+                              (str code))))]
+    (if (seq lines) (vec lines) [(or (get-in body [:error :message]) "The shop could not publish it yet.")])))
+
+(defn- restore-request [id version as-status nm]
+  [:fx/request {:method :patch :path (str "/api/admin/products/" id)
+                :body {:version version :status as-status}}
+   [:admin/restored id as-status nm]])
+
+(defmethod handle :admin/restore [state [_ id nm as-status]]
+  (let [as-status (or as-status "published")
+        loaded (get-in state [:admin :data :product :body])
+        state (-> state (assoc-in [:admin :ui :restore-rejected] nil) (assoc-in [:admin :ui :restoring] id))]
+    (if (and loaded (= id (:id loaded)) (:version loaded))
+      (ret state [(restore-request id (:version loaded) as-status nm)])
+      (ret state [[:fx/request {:path (str "/api/admin/products/" id)} [:admin/restore-read id nm as-status]]]))))
+
+(defmethod handle :admin/restore-read [state [_ id nm as-status {:keys [status body]}]]
+  (cond
+    (= 200 status) (ret state [(restore-request id (:version body) as-status nm)])
+    (= 401 status) (to-login state)
+    :else (ret (-> state (assoc-in [:admin :ui :restoring] nil)
+                   (assoc-in [:admin :ui :notice] "Could not restore the product. Please try again.")))))
+
+(defmethod handle :admin/restored [state [_ id as-status nm {:keys [status body]}]]
+  (let [state (assoc-in state [:admin :ui :restoring] nil)]
+    (cond
+      (= 200 status)
+      (ret (-> state
+               (assoc-in [:admin :ui :restore-rejected] nil)
+               (assoc-in [:admin :ui :notice]
+                         (if (= "draft" as-status)
+                           (str (or nm "The product") " restored as a draft. It is not visible to customers until you publish it.")
+                           (str (or nm "The product") " restored and published.")))
+               ;; A8 builds its form from the product again after the reload
+               (update :forms dissoc :product))
+           [[:fx/dispatch [:admin/reload]]])
+
+      (and (= 422 status) (= "published" as-status))
+      (ret (assoc-in state [:admin :ui :restore-rejected] {:id id :name nm :reasons (restore-reasons body)})
+           [[:fx/focus "restore-rejected"]])
+
+      (= 409 status) (ret (conflict-banner state) [[:fx/dispatch [:admin/reload]]])
+      (= 401 status) (to-login state)
+      :else (ret (assoc-in state [:admin :ui :notice] "Could not restore the product. Please try again.")))))
+
+(defmethod handle :admin/restore-dismiss [state _]
+  (ret (assoc-in state [:admin :ui :restore-rejected] nil)))
 
 (defmethod handle :admin/stock-submit [state [_ product-id current :as action]]
   (let [form (get-in state [:forms :dialog])
@@ -402,39 +502,272 @@
     :else (ret (assoc-in state [:forms :dialog :errors :form] "Could not update stock."))))
 
 ;; ---------------------------------------------------------------------------
-;; Photos
+;; Pictures: checks shared by A8 (one product) and A9 (bulk)
 
-(defmethod handle :admin/upload [state [_ :as action]]
-  (if-not (get-in state [:forms :upload :key])
-    (ret state [[:fx/uuid [:admin/key-ready :upload action]]])
-    (ret (assoc-in state [:forms :upload :status] :submitting)
-         [[:fx/upload {:path "/api/admin/photos" :input "photo-files" :idempotency-key (get-in state [:forms :upload :key])} [:admin/uploaded]]])))
+(def batch-size "Files per request to POST /api/admin/product-images (api-contract.md 8.2)." 20)
+(def max-picture-bytes (* 5 1024 1024))
+(def max-csv-bytes (* 1024 1024))
+(def max-product-images 6)
 
-(defmethod handle :admin/uploaded [state [_ {:keys [status body]}]]
+(defn- extension [file-name]
+  (some-> (re-find #"\.([^.]+)$" (str file-name)) second str/lower-case))
+
+(defn picture-problem
+  "Convenience check before a file is sent (the server checks again). `file` is
+  {:name :size :type}. Returns {:code :message} or nil."
+  [{:keys [name size type]}]
   (cond
-    (= 201 status) (ret (assoc-in state [:forms :upload] {:status :done :items (:items body)}) [[:fx/dispatch [:admin/reload]]])
+    (not (or (#{"image/jpeg" "image/png" "image/webp"} type)
+             (and (str/blank? type) (#{"jpg" "jpeg" "png" "webp"} (extension name)))))
+    {:code "unsupportedMediaType" :message "Only JPEG, PNG or WebP pictures can be used."}
+    (> (or size 0) max-picture-bytes)
+    {:code "fileTooLarge" :message "This file is larger than 5 MB."}))
+
+(defn- rejected-file [file-name error]
+  {:filename file-name :status "rejected" :productId nil :sku nil :position nil :image nil :error error})
+
+(defn split-picked
+  "Sort picked files into [ok-files rejected-results]."
+  [files]
+  (let [checked (map (fn [f] [f (picture-problem f)]) files)]
+    [(vec (map first (remove second checked)))
+     (vec (for [[f p] checked :when p] (rejected-file (:name f) p)))]))
+
+(defn- failed-batch-results
+  "Results for files whose request failed as a whole. Transport failures and
+  5xx can be retried; `:retry-file` keeps the file for that."
+  [files {:keys [status body]}]
+  (let [retry? (or (nil? status) (>= status 500) (= 429 status))
+        error {:code (if retry? "uploadFailed" (or (get-in body [:error :code]) "uploadFailed"))
+               :message (if retry?
+                          "The upload did not reach the server. Try again."
+                          (or (get-in body [:error :message]) "The server did not accept this file."))}]
+    (mapv (fn [f] (cond-> (rejected-file (:name f) error) retry? (assoc :retry-file f))) files)))
+
+;; ---------------------------------------------------------------------------
+;; A8: pictures of one product (ProductImageManager)
+
+(defmethod handle :admin/product-images-picked [state [_ files]]
+  (let [product (get-in state [:admin :data :product :body])
+        room (- max-product-images (count (get-in state [:forms :product :values :images])))
+        [ok local] (split-picked files)
+        accepted (vec (take room ok))
+        overflow (drop room ok)
+        local (into local (map #(rejected-file (:name %) {:code "tooManyImages" :message "A product can have at most 6 pictures."})) overflow)]
+    (cond
+      (or (empty? files) (nil? product)) (ret state)
+      (empty? accepted) (ret (assoc-in state [:forms :product-images] {:items local}))
+      :else (ret (assoc-in state [:forms :product-images] {:status :uploading :items local})
+                 [[:fx/uuid [:admin/product-images-send (:id product) accepted]]]))))
+
+(defmethod handle :admin/product-images-send [state [_ product-id files key]]
+  (ret state [[:fx/upload-files {:path (str "/api/admin/products/" product-id "/images") :files files :idempotency-key key}
+               [:admin/product-images-result files]]]))
+
+(defmethod handle :admin/product-images-result [state [_ files {:keys [status body] :as result}]]
+  (let [local (get-in state [:forms :product-images :items])]
+    (cond
+      (= 200 status)
+      (let [known (set (map :id (get-in state [:forms :product :values :images])))
+            fresh (->> (:items body) (keep #(when (= "attached" (:status %)) (:image %)))
+                       (remove #(known (:id %))) (mapv #(select-keys % [:id :alt :urls])))]
+        (ret (cond-> (-> state
+                         (update-in [:forms :product :values :images] into fresh)
+                         (assoc-in [:forms :product-images] {:items (into (vec local) (:items body))}))
+               (:product body) (assoc-in [:admin :data :product :body] (:product body)))))
+      (= 401 status) (to-login state)
+      :else (ret (assoc-in state [:forms :product-images]
+                           {:items (into (vec local) (failed-batch-results files result))})))))
+
+(defmethod handle :admin/product-images-save [state _]
+  (let [product (get-in state [:admin :data :product :body])
+        images (get-in state [:forms :product :values :images])]
+    (if (or (nil? product) (= :saving (get-in state [:forms :product-images :save :status])))
+      (ret state)
+      (ret (assoc-in state [:forms :product-images :save] {:status :saving})
+           [[:fx/request {:method :patch :path (str "/api/admin/products/" (:id product))
+                          :body {:version (:version product)
+                                 :images (mapv (fn [i] (cond-> {:id (:id i)} (not (str/blank? (:alt i))) (assoc :alt (:alt i)))) images)}}
+             [:admin/product-images-saved]]]))))
+
+(defmethod handle :admin/product-images-saved [state [_ {:keys [status body]}]]
+  (cond
+    (= 200 status) (ret (-> state
+                            (assoc-in [:admin :data :product :body] body)
+                            (assoc-in [:forms :product-images :save] {:status :done})
+                            (assoc-in [:forms :product :values :images] (mapv #(select-keys % [:id :alt :urls]) (:images body)))))
+    (= 409 status) (ret (-> state conflict-banner (assoc-in [:forms :product-images :save] {}))
+                        [[:fx/dispatch [:admin/reload]]])
     (= 401 status) (to-login state)
-    :else (ret (assoc-in state [:forms :upload] {:status :idle :error (or (get-in body [:error :message]) "Upload failed.")}))))
+    (= 422 status) (ret (assoc-in state [:forms :product-images :save]
+                                  {:error (or (get-in body [:error :details 0 :message]) (get-in body [:error :message]) "Please check the pictures.")}))
+    :else (ret (assoc-in state [:forms :product-images :save] {:error "We could not save the pictures. Please try again."}))))
 
-(defmethod handle :admin/assign [state [_ photo-id product-id]]
-  (if (str/blank? product-id)
+;; ---------------------------------------------------------------------------
+;; A9: bulk import. Step 1, the spreadsheet
+
+(defn can-import?
+  "The real import is offered after a dry run that found something to apply."
+  [form]
+  (let [{:keys [created updated]} (get-in form [:dry :report :summary])]
+    (and (= :ok (get-in form [:dry :status]))
+         (pos? (+ (or created 0) (or updated 0)))
+         (not (#{:running :ok} (get-in form [:real :status]))))))
+
+(defmethod handle :admin/csv-picked [state [_ files]]
+  (let [f (first files)]
+    (cond
+      (nil? f) (ret state)
+      (zero? (or (:size f) 0)) (ret (assoc-in state [:forms :import-csv] {:error "That file is empty."}))
+      (> (:size f) max-csv-bytes) (ret (assoc-in state [:forms :import-csv] {:error "That file is larger than 1 MB. Split it into smaller files of up to 500 rows."}))
+      :else (ret (assoc-in state [:forms :import-csv] {:file f})))))
+
+(defmethod handle :admin/csv-key-ready [state [_ mode key]]
+  (handle (assoc-in state [:forms :import-csv :keys mode] key) [:admin/csv-check mode]))
+
+(defmethod handle :admin/csv-check [state [_ mode]]
+  (let [form (get-in state [:forms :import-csv])]
+    (cond
+      (nil? (:file form)) (ret (assoc-in state [:forms :import-csv :error] "Choose a CSV file first."))
+      (= :running (get-in form [mode :status])) (ret state)
+      (and (= :real mode) (not (can-import? form))) (ret state)
+      ;; one key per file and mode: a dry run and the real import are different
+      ;; requests, and the same file retried replays instead of repeating
+      (nil? (get-in form [:keys mode])) (ret state [[:fx/uuid [:admin/csv-key-ready mode]]])
+      :else (ret (-> state (assoc-in [:forms :import-csv mode] {:status :running}) (assoc-in [:forms :import-csv :error] nil))
+                 [[:fx/upload-files (cond-> {:path "/api/admin/product-imports" :field "file" :files [(:file form)]
+                                             :idempotency-key (get-in form [:keys mode])}
+                                      (= :dry mode) (assoc :query {:dryRun "true"}))
+                   [:admin/csv-result mode]]]))))
+
+(def ^:private file-error-text
+  "Whole-file codes (backend: error.details of a 422). The server message wins."
+  {"required" "Choose a CSV file."
+   "notUtf8" "The file is not UTF-8 text. Save it as CSV UTF-8."
+   "invalidCsv" "The file could not be read as CSV."
+   "missingColumn" "The first line must contain a sku column."
+   "unknownColumn" "The first line has a column that is not in the template."
+   "duplicateColumn" "A column heading appears twice."
+   "tooManyRows" "A file can have at most 500 rows."})
+
+(defn import-error-lines
+  "Whole-file failures (api-contract.md 8.2): 422 with details, 413."
+  [status body]
+  (cond
+    (nil? status) ["We could not reach the server. Please try again."]
+    (= 413 status) ["That file is larger than 1 MB. Split it into smaller files of up to 500 rows."]
+    (= 422 status) (let [lines (keep #(or (not-empty (:message %)) (file-error-text (:code %)) (:code %)) (get-in body [:error :details]))]
+                     (if (seq lines) (vec lines) [(or (get-in body [:error :message]) "The file could not be read.")]))
+    :else ["We could not import the file. Please try again."]))
+
+(defmethod handle :admin/csv-result [state [_ mode {:keys [status body]}]]
+  (cond
+    (= 200 status)
+    (let [st (assoc-in state [:forms :import-csv mode] {:status :ok :report body})]
+      (if (= :real mode)
+        (ret (assoc-in st [:forms :import-review :imported-ids]
+                       (vec (keep #(when (#{"created" "updated"} (:status %)) (:productId %)) (:rows body))))
+             [[:fx/dispatch [:admin/reload]]])
+        (ret st)))
+    (= 401 status) (to-login state)
+    :else (ret (assoc-in state [:forms :import-csv mode] {:status :error :errors (import-error-lines status body)}))))
+
+;; Step 2, the pictures
+
+(defmethod handle :admin/pictures-picked [state [_ files]]
+  (if (or (empty? files) (= :uploading (get-in state [:forms :import-pictures :status])))
     (ret state)
-    (ret state [[:fx/request {:method :post :path "/api/admin/photo-assignments" :body {:assignments [{:photoId photo-id :productId product-id}]}}
-                 [:admin/assigned photo-id]]])))
+    (let [[ok local] (split-picked files)]
+      (ret (assoc-in state [:forms :import-pictures] {:status :ready :queue ok :results local})))))
 
-(defmethod handle :admin/assigned [state [_ _photo-id {:keys [status body]}]]
-  (let [r (first (:results body))]
-    (ret (assoc-in state [:admin :ui :notice]
-                   (if (and (= 200 status) (= "assigned" (:status r))) "Photo attached to the product."
-                       (or (get-in r [:error :message]) "Could not attach the photo.")))
-         [[:fx/dispatch [:admin/reload]]])))
+(defmethod handle :admin/pictures-upload [state _]
+  (let [{:keys [queue status]} (get-in state [:forms :import-pictures])]
+    (if (or (empty? queue) (= :uploading status))
+      (ret state)
+      (ret (update-in state [:forms :import-pictures] assoc :status :uploading :index 0 :total (count queue))
+           [[:fx/dispatch [:admin/pictures-next]]]))))
 
-(defmethod handle :admin/photo-delete [state [_ id]]
-  (ret (assoc-in state [:admin :ui :dialog] nil)
-       [[:fx/request {:method :delete :path (str "/api/admin/photos/" id)} [:admin/photo-deleted]]]))
+(defmethod handle :admin/pictures-next [state _]
+  (let [{:keys [queue index]} (get-in state [:forms :import-pictures])
+        start (* index batch-size)]
+    (if (>= start (count queue))
+      (ret (update-in state [:forms :import-pictures] assoc :status :done :queue [])
+           [[:fx/dispatch [:admin/reload]]])
+      (ret state [[:fx/uuid [:admin/pictures-send (subvec queue start (min (count queue) (+ start batch-size)))]]]))))
 
-(defmethod handle :admin/photo-deleted [state _]
-  (ret (assoc-in state [:admin :ui :notice] "Photo deleted.") [[:fx/dispatch [:admin/reload]]]))
+(defmethod handle :admin/pictures-send [state [_ batch key]]
+  (ret state [[:fx/upload-files {:path "/api/admin/product-images" :files batch :idempotency-key key}
+               [:admin/pictures-batch-result batch]]]))
+
+(defmethod handle :admin/pictures-batch-result [state [_ batch {:keys [status body] :as result}]]
+  (if (= 401 status)
+    (to-login state)
+    (ret (-> state
+             (update-in [:forms :import-pictures :results] into
+                        (if (= 200 status) (:items body) (failed-batch-results batch result)))
+             (update-in [:forms :import-pictures :index] inc))
+         [[:fx/dispatch [:admin/pictures-next]]])))
+
+(defmethod handle :admin/pictures-retry [state _]
+  (let [{:keys [results]} (get-in state [:forms :import-pictures])
+        again (vec (keep :retry-file results))]
+    (if (empty? again)
+      (ret state)
+      (ret (assoc-in state [:forms :import-pictures] {:status :ready :queue again :results (vec (remove :retry-file results))})
+           [[:fx/dispatch [:admin/pictures-upload]]]))))
+
+(defmethod handle :admin/pictures-clear [state _]
+  (ret (update state :forms dissoc :import-pictures)))
+
+;; Step 3, review and publish
+
+(defn draft-lacks
+  "What a draft still needs before it can be published (api-contract.md 8.1)."
+  [p]
+  (cond-> []
+    (nil? (:price p)) (conj "Price")
+    (nil? (:image p)) (conj "Picture")
+    (str/blank? (:categorySlug p)) (conj "Category")))
+
+(defn drafts-shown
+  "Drafts listed in step 3: those from this session's import when there was one,
+  otherwise every draft. `:scope :all` shows every draft."
+  [state]
+  (let [items (get-in state [:admin :data :drafts :body :items])
+        {:keys [imported-ids scope]} (get-in state [:forms :import-review])
+        ids (set imported-ids)]
+    (if (and (seq ids) (not= :all scope))
+      (filterv #(ids (:id %)) items)
+      (vec items))))
+
+(defmethod handle :admin/drafts-page [state [_ {:keys [status body]}]]
+  (if (= 200 status)
+    (let [merged (assoc body :items (into (vec (get-in state [:admin :data :drafts :body :items])) (:items body)))]
+      (ret (assoc-in state [:admin :data :drafts :body] merged) [(drafts-next-page-fx merged)]))
+    (ret (assoc-in state [:admin :data :drafts] {:status :error :error "We could not load all the drafts."}))))
+
+(defmethod handle :admin/drafts-scope [state [_ scope]]
+  (ret (assoc-in state [:forms :import-review :scope] scope)))
+
+(defmethod handle :admin/publish-complete [state _]
+  (let [items (drafts-shown state)
+        ids (mapv :id (take 500 (filter (comp empty? draft-lacks) items)))]
+    (if (or (empty? ids) (= :running (get-in state [:forms :import-review :publish :status])))
+      (ret state)
+      (ret (assoc-in state [:forms :import-review :publish] {:status :running})
+           [[:fx/request {:method :post :path "/api/admin/product-publications" :body {:productIds ids}}
+             [:admin/publish-result (into {} (map (juxt :id :name)) items)]]]))))
+
+(defmethod handle :admin/publish-result [state [_ names {:keys [status body]}]]
+  (cond
+    (= 200 status)
+    (ret (assoc-in state [:forms :import-review :publish]
+                   {:status :done
+                    :results (mapv #(assoc % :name (get names (:productId %))) (:results body))})
+         [[:fx/dispatch [:admin/reload]]])
+    (= 401 status) (to-login state)
+    :else (ret (assoc-in state [:forms :import-review :publish]
+                         {:status :error :error "We could not publish the drafts. Please try again."}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Staff
@@ -483,6 +816,9 @@
 
 (defmethod handle :admin/dismiss-temp [state _]
   (ret (assoc-in state [:admin :ui :temp-password] nil)))
+
+(defmethod handle :help/print [state _]
+  (ret state [[:fx/print]]))
 
 (defmethod handle :admin/dismiss-notice [state _]
   (ret (assoc-in state [:admin :ui :notice] nil)))

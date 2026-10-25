@@ -9,6 +9,7 @@
   aero/aero                     {:mvn/version "1.1.6"}
   metosin/malli                 {:mvn/version "0.20.3"}
   metosin/jsonista              {:mvn/version "1.0.2"}
+  org.clojure/data.csv          {:mvn/version "1.1.1"}
   com.password4j/password4j     {:mvn/version "1.8.4"}
   org.eclipse.angus/angus-mail  {:mvn/version "2.0.5"}
   ch.qos.logback/logback-classic {:mvn/version "1.5.18"}}

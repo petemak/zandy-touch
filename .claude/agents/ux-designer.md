@@ -103,4 +103,35 @@ still fail here if getting from one step to the next isn't
 obvious — that gap is exactly what this file exists to catch
 before a developer builds it.
 
+If the site has an admin or back-office, also write admin-help.md:
+the built-in help that staff read inside the admin. The shop
+owner and staff are not technical and will not write or edit
+documentation themselves, so this file is the only help they
+get. Keep it current: whenever you change an admin page, a
+staff journey or a role's permissions, update admin-help.md in
+the same pass.
+- One topic per task a staff member actually does (for example
+  processing an order, adding a product, adjusting stock, a bulk
+  import, adding a staff account, resetting a password). Cover
+  every admin page in design-spec.md.
+- Mark each topic with the roles that may do it. A role must
+  never see a topic for a task it is not allowed to do (for
+  example support staff do not see staff-account management).
+- Write numbered steps in plain words, using the exact page
+  names, button labels and field names from design-spec.md, and
+  say what the person sees after each important click. Add short
+  "Good to know" notes for rules that surprise people (what
+  happens to stock, what customers can see, what cannot be
+  undone). No jargon, no API paths, no screenshots (QA adds
+  those later).
+- Map each admin page to the topic its "How do I…?" link opens.
+- Use this exact format, so the frontend build can convert it:
+    # <title of the help>
+    ## <topic-id> | <Topic title> | roles: <owner, support> | pages: <A4, A5> | group: <group name>
+    <one-line summary>
+    then paragraphs, numbered steps (1.), bullets (-),
+    sub-headings (###), notes as lines starting with "> ",
+    **bold** and links of the form [text](help:<topic-id>) or
+    [text](page:<page id such as A8>). Nothing else.
+
 Do not write code.

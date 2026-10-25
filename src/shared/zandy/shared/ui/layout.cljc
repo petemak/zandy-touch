@@ -1,6 +1,7 @@
 (ns zandy.shared.ui.layout
   "Site header, footer and the page frame."
-  (:require [zandy.shared.cart :as cart]
+  (:require [clojure.string :as str]
+            [zandy.shared.cart :as cart]
             [zandy.shared.format :as fmt]
             [zandy.shared.routes :as routes]
             [zandy.shared.ui.core :as ui]))
@@ -78,6 +79,27 @@
        (ui/button {:type "submit" :variant (if dark? :on-dark :primary) :disabled? (= :submitting status)}
                   (if (= :submitting status) "Subscribing" "Subscribe"))])))
 
+(def ^:private social-networks
+  "Order shown in the footer: [key label icon]. Items whose URL is null (not yet
+  configured) are hidden (api-contract.md section 2)."
+  [[:tiktok "TikTok" :tiktok]
+   [:facebook "Facebook" :facebook]
+   [:instagram "Instagram" :instagram]])
+
+(defn social-links
+  "Footer \"Follow us\" block: a heading and one labelled icon link per
+  non-blank profile in site-info `social`, or nil when none is configured."
+  [social]
+  (let [shown (filter (fn [[k]] (not (str/blank? (get social k)))) social-networks)]
+    (when (seq shown)
+      [:div.site-footer__follow
+       [:h2.site-footer__title "Follow us"]
+       [:ul.site-footer__social
+        (for [[k label icon] shown]
+          ^{:key k}
+          [:li (ui/external-link (get social k) {:rel "noopener" :target "_blank" :aria-label (str "Zandy Touch on " label " (opens in a new tab)")}
+                                 (ui/icon icon) [:span.site-footer__social-label label])])]])))
+
 (defn site-footer [{:keys [site forms]}]
   (let [{:keys [phone whatsapp email shopAddress openingHours social]} site]
     [:footer.site-footer
@@ -108,12 +130,7 @@
         (when email [:li (ui/icon :email :sm) (ui/external-link (str "mailto:" email) {} email)])
         (when shopAddress [:li (ui/icon :location :sm) [:span shopAddress]])
         (for [h openingHours] ^{:key (:days h)} [:li (ui/icon :history :sm) [:span (fmt/hours-label h)]])]
-       (when (or (:instagram social) (:tiktok social))
-         [:ul.site-footer__social
-          (when (:instagram social)
-            [:li (ui/external-link (:instagram social) {:rel "noopener" :aria-label "Zandy Touch on Instagram"} (ui/icon :instagram))])
-          (when (:tiktok social)
-            [:li (ui/external-link (:tiktok social) {:rel "noopener" :aria-label "Zandy Touch on TikTok"} (ui/icon :tiktok))])])]
+       (social-links social)]
       [:div.site-footer__newsletter
        (newsletter-form {:id "footer-email" :source "footer" :form (:newsletter forms) :dark? true})]]
      [:p.site-footer__copy.container "© Zandy Touch, Kampala, Uganda"]]))

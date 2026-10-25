@@ -5,7 +5,9 @@
             [replicant.dom :as r-dom]
             [zandy.frontend.scenes.admin]
             [zandy.frontend.scenes.components]
-            [zandy.frontend.scenes.pages]))
+            [zandy.frontend.scenes.help]
+            [zandy.frontend.scenes.pages]
+            [zandy.frontend.scenes.widgets]))
 
 (defn init []
   ;; Handlers are data; in Portfolio they are only logged.

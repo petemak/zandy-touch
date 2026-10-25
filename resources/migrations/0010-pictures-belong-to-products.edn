@@ -1,0 +1,10 @@
+;; Versioned migration.
+;; There is no photo library: a picture (:photo/*) always belongs to exactly one product through its
+;; :product-image/ entry. Making the :product-image/photo reference a component means that removing a
+;; picture from its product (or retracting the product-image entity) retracts the photo record with it, so
+;; no unassigned photo record can exist. The library endpoints and their code are removed in the same release.
+{:id :0010-pictures-belong-to-products,
+ :description "Product pictures own their photo record (no photo library)",
+ :tx-data
+ [{:db/ident :product-image/photo,
+   :db/isComponent true}]}

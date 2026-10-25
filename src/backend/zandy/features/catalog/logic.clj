@@ -44,6 +44,11 @@
 (defn image-view [{:keys [photo-id alt]} product-name]
   {:id photo-id :alt (or alt product-name) :urls (util/media-urls photo-id)})
 
+(defn admin-image-view
+  "Staff view of a picture: the stored alt text, nil when none is set (no fallback to the product name)."
+  [{:keys [photo-id alt]}]
+  {:id photo-id :alt alt :urls (util/media-urls photo-id)})
+
 (defn first-image [{:keys [images name]}]
   (when-let [i (first (sorted-images images))] (image-view i name)))
 
@@ -115,7 +120,7 @@
    :category-slug (:slug category) :price price :currency "UGX"
    :stock-quantity stock-quantity :availability (availability stock-quantity)
    :low-stock (low-stock? stock-quantity low) :status status :featured (boolean featured?)
-   :image (first-image p) :updated-at updated-at :updated-by updated-by})
+   :image (some-> (first (sorted-images (:images p))) admin-image-view) :updated-at updated-at :updated-by updated-by})
 
 (defn admin-detail [{:keys [id slug sku name brand own-brand? category price short-description description size how-to-use
                             ingredients featured? status version stock-quantity images created-at updated-at] :as _p}
@@ -126,7 +131,7 @@
    :ingredients ingredients :featured (boolean featured?) :status status :version version
    :stock-quantity stock-quantity :availability (availability stock-quantity)
    :low-stock (low-stock? stock-quantity low)
-   :images (mapv #(image-view % name) (sorted-images images))
+   :images (mapv admin-image-view (sorted-images images))
    :created-at created-at :updated-at updated-at :updated-by updated-by})
 
 (defn filter-admin [products {:keys [status category-slug q stock]} low]
@@ -159,3 +164,41 @@
       (nil? price) (conj {:field "price" :code "priceRequired" :message "A product needs a price before it can be published."})
       (empty? images) (conj {:field "images" :code "imageRequired" :message "A product needs at least one image before it can be published."})
       (nil? category) (conj {:field "categorySlug" :code "invalid" :message "Choose a category."}))))
+
+;; ---- product pictures --------------------------------------------------------------------------
+
+(defn plan-slot
+  "Where a new picture goes. `images` are the product's pictures (each with :position, 0-based).
+  `position` is the 1-based slot the file asked for, or nil to append. A positioned picture replaces
+  whatever is in that slot (also when the product already has the maximum). An appended picture goes after
+  the last one, or into the first free slot when the last slot is taken. Returns
+  {:index n :replaces <image or nil>} or {:error :tooManyImages}."
+  [images position]
+  (let [by-pos (into {} (map (juxt :position identity)) images)]
+    (cond
+      position {:index (dec position) :replaces (get by-pos (dec position))}
+      (>= (count images) max-images) {:error :tooManyImages}
+      :else (let [nxt (inc (reduce max -1 (keys by-pos)))]
+              {:index (if (< nxt max-images) nxt (first (remove by-pos (range max-images))))
+               :replaces nil}))))
+
+(defn reconcile-images
+  "Matches the `images` list of a product write ({:id :alt} entries) against the product's existing
+  pictures. Returns {:kept [{:image existing :alt alt}] :removed [existing ...] :problems [...]}.
+  Pictures can only be reordered, re-labelled or removed: an id that is not on this product, or listed
+  twice, is a problem."
+  [existing entries]
+  (let [by-photo (into {} (map (juxt #(some-> (:photo-id %) str str/lower-case) identity)) existing)
+        step (fn [[acc seen probs] [i {:keys [id alt]}]]
+               (let [k (some-> id str str/lower-case)
+                     image (get by-photo k)]
+                 (cond
+                   (nil? image) [acc seen (conj probs {:field (str "images[" i "].id") :code "unknownImage"
+                                                       :message "This picture is not on this product."})]
+                   (contains? seen k) [acc seen (conj probs {:field (str "images[" i "].id") :code "duplicateImage"
+                                                             :message "This picture is listed twice."})]
+                   :else [(conj acc {:image image :alt alt}) (conj seen k) probs])))
+        [kept seen problems] (reduce step [[] #{} []] (map-indexed vector entries))]
+    {:kept kept
+     :removed (vec (remove #(contains? seen (some-> (:photo-id %) str str/lower-case)) existing))
+     :problems problems}))

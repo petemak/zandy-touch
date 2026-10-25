@@ -9,7 +9,9 @@
    :email (:email site)
    :shop-address (:shop-address site)
    :opening-hours (:opening-hours site)
-   :social {:instagram (get-in site [:social :instagram]) :tiktok (get-in site [:social :tiktok])}
+   :social {:instagram (get-in site [:social :instagram])
+           :tiktok (get-in site [:social :tiktok])
+           :facebook (get-in site [:social :facebook])}
    :currency "UGX"
    :payment-methods ["cash" "mobileMoney"]
    :max-quantity-per-line (:max-quantity-per-line catalog)})

@@ -1,6 +1,6 @@
 (ns zandy.features.catalog.routes
   "Catalogue endpoints: categories, public products, sitemap entries, staff products and stock
-  (contract sections 2, 3 and 8.1/8.3)."
+  (contract sections 2, 3, 8.1, 8.3 and the bulk publication of 8.2)."
   (:require [zandy.features.catalog.api :as api]
             [zandy.features.catalog.db :as db]
             [zandy.features.catalog.logic :as logic]
@@ -113,6 +113,16 @@
         by (users ctx (map :by-eid (:items page)))]
     {:status 200 :body (update page :items (fn [items] (mapv #(movement-view % (get by (:by-eid %))) items)))}))
 
+;; ---- bulk publication ----------------------------------------------------------------------------
+
+(defn publish-many [{:keys [ctx parameters user]}]
+  (let [results (mapv (fn [id]
+                        (let [r (api/publish-product! ctx {:user-eid (:eid user)} (parse-uuid id))]
+                          (cond-> {:product-id id :status (name (:status r))}
+                            (seq (:errors r)) (assoc :errors (:errors r)))))
+                      (get-in parameters [:body :product-ids]))]
+    {:status 200 :body {:results results}}))
+
 (def routes
   [{:method :get :path "/api/categories" :name :catalog/categories :access :public :cache cache-categories
     :handler list-categories}
@@ -133,4 +143,6 @@
    {:method :get :path "/api/admin/products/:id/stock-movements" :name :catalog/stock-history :access :staff
     :parameters {:query schema/PagingQuery} :handler stock-history}
    {:method :post :path "/api/admin/products/:id/stock-movements" :name :catalog/stock-adjust :access :staff
-    :idempotent? true :parameters {:body schema/StockMovement} :handler stock-adjust}])
+    :idempotent? true :parameters {:body schema/StockMovement} :handler stock-adjust}
+   {:method :post :path "/api/admin/product-publications" :name :catalog/publish-many :access :staff
+    :parameters {:body schema/Publications} :handler publish-many}])

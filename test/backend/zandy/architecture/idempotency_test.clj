@@ -57,22 +57,46 @@
             b (t/staff app owner :post path :idem k)]
         (is (string? (get-in a [:body :temporary-password])))
         (is (nil? (get-in b [:body :temporary-password])))))
-    (testing "POST /api/admin/photos"
-      (let [files [["a.jpg" (t/jpeg-bytes)]]
-            before (count-of ctx :photo/id)
+    (doseq [[label attr send! files-a files-b]
+            [["POST /api/admin/products/{id}/images" :photo/id
+              (fn [files idem] (t/upload-to-product! app owner (:id product) files :idem idem))
+              [["a.jpg" (t/jpeg-bytes)]] [["different.jpg" (t/jpeg-bytes 80 60)]]]
+             ["POST /api/admin/product-images" :photo/id
+              (fn [files idem] (t/upload-images! app owner files :idem idem))
+              [["IDEM-1-1.jpg" (t/jpeg-bytes)]] [["IDEM-1-2.jpg" (t/jpeg-bytes 80 60)]]]]]
+      (testing label
+        (t/staff app owner :post "/api/admin/products"
+                 :body {:name "Idem One" :brand "B" :category-slug "skincare" :status "draft" :sku "IDEM-1"})
+        (let [before (count-of ctx attr)
+              k (str (random-uuid))
+              missing (send! files-a false)
+              a (send! files-a k)
+              b (send! files-a k)
+              c (send! files-b k)]
+          (is (= "missingIdempotencyKey" (t/error-code missing)))
+          (is (= 200 (:status a)))
+          (is (nil? (get-in a [:headers "Idempotent-Replayed"])))
+          (is (= "true" (get-in b [:headers "Idempotent-Replayed"])))
+          (is (= (get-in a [:body :items 0 :image :id]) (get-in b [:body :items 0 :image :id])))
+          (is (= 1 (- (count-of ctx attr) before)) "one picture only")
+          (is (= "idempotencyKeyReused" (t/error-code c))))))
+    (testing "POST /api/admin/product-imports"
+      (let [csv "sku,name,brand,category\nIDEM-2,Idem Two,B,skincare\n"
+            other "sku,name,brand,category\nIDEM-3,Idem Three,B,skincare\n"
+            before (count-of ctx :product/id)
             k (str (random-uuid))
-            missing (let [{:keys [content-type body]} (t/multipart files)]
-                      (t/call app :post "/api/admin/photos" :raw-body body
-                              :headers {"Content-Type" content-type "Cookie" (:cookie owner) "X-CSRF-Token" (:csrf owner)}))
-            a (t/upload! app owner files :idem k)
-            b (t/upload! app owner files :idem k)
-            c (t/upload! app owner [["different.jpg" (t/jpeg-bytes 80 60)]] :idem k)]
+            missing (t/import-csv! app owner csv :idem false)
+            a (t/import-csv! app owner csv :idem k)
+            b (t/import-csv! app owner csv :idem k)
+            c (t/import-csv! app owner other :idem k)
+            dry (t/import-csv! app owner csv :idem k :dry-run true)]
         (is (= "missingIdempotencyKey" (t/error-code missing)))
-        (is (= 201 (:status a)))
+        (is (= 200 (:status a)))
         (is (= "true" (get-in b [:headers "Idempotent-Replayed"])))
-        (is (= (get-in a [:body :items 0 :photo :id]) (get-in b [:body :items 0 :photo :id])))
-        (is (= 1 (- (count-of ctx :photo/id) before)))
-        (is (= "idempotencyKeyReused" (t/error-code c)))))
+        (is (= (get-in a [:body :rows 0 :product-id]) (get-in b [:body :rows 0 :product-id])))
+        (is (= 1 (- (count-of ctx :product/id) before)) "one product only")
+        (is (= "idempotencyKeyReused" (t/error-code c)))
+        (is (= "idempotencyKeyReused" (t/error-code dry)) "dryRun is part of the request")))
     (testing "natural-key idempotency: status changes and deletes"
       (is (= 204 (:status (t/staff app owner :delete (str "/api/admin/products/" (:id product)) :idem false))))
       (is (= 204 (:status (t/staff app owner :delete (str "/api/admin/products/" (:id product)) :idem false)))))))

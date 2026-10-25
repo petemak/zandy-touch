@@ -21,7 +21,8 @@
     (is (= 5 (notifications/process-once! ctx "w1")))
     (let [mail (t/sent-mail ctx)
           alerts (filter #(re-find #"New order" (:subject %)) mail)]
-      (is (= #{"owner@example.com" "grace@example.com" "amina@example.com"} (set (map :to (take 3 mail)))))
+      (is (= {"owner@example.com" 2 "grace@example.com" 2 "amina@example.com" 1} (frequencies (map :to mail)))
+          "owner and opted-in staff get both alerts, the customer with an email gets one receipt")
       (is (= 4 (count alerts)))
       (is (every? #(re-find #"/admin/orders/" (:text %)) alerts))
       (is (not-any? #(re-find #"Plot 12|amina@example" (:text %)) alerts) "no street address or email in alerts")

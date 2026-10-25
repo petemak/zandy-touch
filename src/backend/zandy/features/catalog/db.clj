@@ -1,5 +1,5 @@
 (ns zandy.features.catalog.db
-  "Catalogue persistence: categories, products, photos, stock movements."
+  "Catalogue persistence: categories, products, product pictures, stock movements."
   (:require [datomic.api :as d]
             [zandy.platform.datomic :as datomic]
             [zandy.platform.util :as util]))
@@ -66,17 +66,10 @@
 
 ;; ---- writes ----------------------------------------------------------------------------------------
 
-(defn image-tx [images]
-  (vec (map-indexed
-        (fn [i {:keys [photo-eid alt]}]
-          (util/compact {:product-image/id (random-uuid) :product-image/position i
-                         :product-image/alt alt :product-image/photo photo-eid}))
-        images)))
-
 (defn create-product-tx
   "tx-data for a new product with its opening stock movement."
   [{:keys [id slug sku name brand own-brand? category-eid price short-description description size how-to-use
-           ingredients featured? status stock-quantity images user-eid now movement-id]}]
+           ingredients featured? status stock-quantity user-eid now movement-id]}]
   (let [pid "new-product"]
     (cond-> [(util/compact
               {:db/id pid :product/id id :product/slug slug :product/sku sku :product/name name :product/brand brand
@@ -85,8 +78,7 @@
                :product/how-to-use how-to-use :product/ingredients ingredients :product/featured? (boolean featured?)
                :product/status status :product/stock-quantity (or stock-quantity 0) :product/version 1
                :product/created-at now :product/updated-at now :product/updated-by user-eid
-               :product/first-published-at (when (= :published status) now)
-               :product/images (image-tx images)})]
+               :product/first-published-at (when (= :published status) now)})]
       (pos? (or stock-quantity 0))
       (conj (util/compact
              {:stock-movement/id movement-id :stock-movement/type :initial :stock-movement/delta stock-quantity
@@ -123,11 +115,38 @@
       (when (and (= :published (:status changes)) (nil? (:first-published-at existing)))
         [[:db/add pid :product/first-published-at now]])))))
 
-(defn replace-images-tx [existing images]
-  (let [pid (:eid existing)
-        news (image-tx images)]
-    (vec (concat (mapcat (fn [i] [[:db/retract pid :product/images (:eid i)] [:db/retractEntity (:eid i)]]) (:images existing))
-                 [{:db/id pid :product/images news}]))))
+(defn reorder-images-tx
+  "tx-data that makes the product's picture list equal `kept` (a vector of {:image <existing image> :alt alt},
+  in the new order). Pictures not kept are removed; retracting the product-image also retracts its photo
+  record (the :product-image/photo reference is a component)."
+  [existing kept removed]
+  (let [pid (:eid existing)]
+    (vec (concat
+          (mapcat (fn [i] [[:db/retract pid :product/images (:eid i)] [:db/retractEntity (:eid i)]]) removed)
+          (mapcat (fn [idx {:keys [image alt]}]
+                    (concat [[:db/add (:eid image) :product-image/position idx]]
+                            (cond alt [[:db/add (:eid image) :product-image/alt alt]]
+                                  (:alt image) [[:db/retract (:eid image) :product-image/alt (:alt image)]])))
+                  (range) kept)))))
+
+(defn attach-picture-tx
+  "tx-data that stores a new picture on the product at `index` (0-based), replacing `replaces` when given.
+  Guarded by the product version."
+  [product {:keys [photo-id filename content-type width height index replaces user-eid now seed?]}]
+  (let [pid (:eid product)]
+    (vec (concat
+          [[:db/cas pid :product/version (:version product) (inc (:version product))]
+           [:db/add pid :product/updated-at now]]
+          (when user-eid [[:db/add pid :product/updated-by user-eid]])
+          (when replaces [[:db/retract pid :product/images (:eid replaces)] [:db/retractEntity (:eid replaces)]])
+          [{:db/id pid
+            :product/images
+            [{:product-image/id (random-uuid)
+              :product-image/position index
+              :product-image/photo (util/compact
+                                    {:photo/id photo-id :photo/original-filename filename :photo/content-type content-type
+                                     :photo/width width :photo/height height :photo/uploaded-at now
+                                     :photo/seed? (when seed? true) :photo/uploaded-by user-eid})}]}]))))
 
 (defn archive-tx [existing {:keys [user-eid now]}]
   (let [pid (:eid existing)]
@@ -160,41 +179,5 @@
      :delta (:stock-movement/delta m) :quantity-after (:stock-movement/quantity-after m)
      :note (:stock-movement/note m) :order-number (:stock-movement/order-number m)
      :at (:stock-movement/at m) :by-eid (get-in m [:stock-movement/by :db/id])}))
-
-;; ---- photos --------------------------------------------------------------------------------------------
-
-(defn create-photo! [conn {:keys [id original-filename content-type width height uploaded-by-eid seed? now]}]
-  (datomic/transact! conn [(util/compact {:photo/id id :photo/original-filename original-filename
-                                          :photo/content-type content-type :photo/width width :photo/height height
-                                          :photo/uploaded-at now :photo/seed? (when seed? true)
-                                          :photo/uploaded-by uploaded-by-eid})]))
-
-(defn photo-eid [db photo-id] (d/entid db [:photo/id photo-id]))
-
-(defn photo-by-id [db id]
-  (let [m (d/pull db [:db/id :photo/id :photo/original-filename :photo/uploaded-at] [:photo/id id])]
-    (when (:photo/id m)
-      {:eid (:db/id m) :id (:photo/id m) :filename (:photo/original-filename m) :uploaded-at (:photo/uploaded-at m)})))
-
-(defn assigned-product-ids
-  "Map of photo eid -> vector of product ids that use the photo."
-  [db]
-  (reduce (fn [acc [photo pid]] (update acc photo (fnil conj []) pid))
-          {}
-          (d/q '[:find ?photo ?pid :where [?i :product-image/photo ?photo] [?p :product/images ?i] [?p :product/id ?pid]] db)))
-
-(defn photos [db]
-  (let [assigned (assigned-product-ids db)]
-    (->> (d/q '[:find [(pull ?e [:db/id :photo/id :photo/original-filename :photo/uploaded-at]) ...]
-                :where [?e :photo/id]] db)
-         (map (fn [m] {:eid (:db/id m) :id (:photo/id m) :filename (:photo/original-filename m)
-                       :uploaded-at (:photo/uploaded-at m) :assigned-product-ids (get assigned (:db/id m) [])}))
-         (sort-by :uploaded-at #(compare %2 %1))
-         vec)))
-
-(defn products-using-photo [db photo-eid]
-  (->> (d/q '[:find [?p ...] :in $ ?photo :where [?i :product-image/photo ?photo] [?p :product/images ?i]] db photo-eid)
-       (map #(product-map (d/pull db product-pattern %)))
-       vec))
 
 (defn current-db [conn] (d/db conn))

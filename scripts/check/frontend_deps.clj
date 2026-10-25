@@ -66,11 +66,14 @@
    "zandy.frontend.router" #{"zandy.shared.routes"}
    "zandy.frontend.state" #{"zandy.shared.*"}
    "zandy.frontend.effects" #{"zandy.frontend.api" "zandy.frontend.cart-store" "zandy.frontend.router" "zandy.shared.json" "zandy.shared.seo"}
-   "zandy.frontend.admin.state" #{"zandy.frontend.state" "zandy.shared.*"}
-   "zandy.frontend.admin.core" #{"zandy.frontend.admin.state" "zandy.shared.*"}
+   "zandy.frontend.admin.help-data" #{}
+   "zandy.frontend.admin.help" #{"zandy.frontend.admin.help-data" "zandy.shared.*"}
+   "zandy.frontend.admin.state" #{"zandy.frontend.admin.help" "zandy.frontend.state" "zandy.shared.*"}
+   "zandy.frontend.admin.widgets" #{"zandy.shared.*"}
+   "zandy.frontend.admin.core" #{"zandy.frontend.admin.help" "zandy.frontend.admin.state" "zandy.frontend.admin.widgets" "zandy.shared.*"}
    "zandy.frontend.main" #{"zandy.frontend.admin.core" "zandy.frontend.cart-store" "zandy.frontend.effects" "zandy.frontend.router"
                            "zandy.frontend.state" "zandy.shared.pages"}
-   "zandy.frontend.scenes.*" #{"zandy.frontend.admin.core" "zandy.frontend.scenes.*" "zandy.shared.*"}
+   "zandy.frontend.scenes.*" #{"zandy.frontend.admin.core" "zandy.frontend.admin.help" "zandy.frontend.admin.widgets" "zandy.frontend.scenes.*" "zandy.shared.*"}
    "zandy.ssr.config" #{}
    "zandy.ssr.log" #{}
    "zandy.ssr.api-client" #{"zandy.shared.routes"}

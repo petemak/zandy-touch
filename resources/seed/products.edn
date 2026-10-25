@@ -25,7 +25,7 @@
   :description "A foaming face cleanser in a 150 ml pump bottle. Sample product description for display purposes."
   :size "150 ml"
   :how-to-use "Massage onto wet skin, then rinse with water."
-  :images [{:file "seed-SEED-SK-02-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-SK-02-1.jpg" :alt "Woman smoothing face cream onto her cheek"}]}
 {:sku "SEED-SK-03"
   :name "Daily Moisturising Cream 50 ml"
   :brand "Zandy Touch"
@@ -38,7 +38,7 @@
   :size "50 ml"
   :how-to-use "Apply to clean skin morning and evening."
   :ingredients "Aqua, shea butter, glycerin (sample listing)."
-  :images [{:file "seed-SEED-SK-03-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-SK-03-1.jpg" :alt "Woman holding an open jar of face cream"}]}
 {:sku "SEED-SK-04"
   :name "Mineral Sunscreen SPF 50, 60 ml"
   :brand "Sample Brand"
@@ -50,7 +50,7 @@
   :description "A mineral sunscreen in a 60 ml tube. Sample product description for display purposes."
   :size "60 ml"
   :how-to-use "Apply to exposed skin before going outside and reapply as directed on the pack."
-  :images [{:file "seed-SEED-SK-04-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-SK-04-1.jpg" :alt "Woman applying a skincare product with a dropper"}]}
 {:sku "SEED-PF-01"
   :name "Zandy Touch Signature Eau de Parfum 50 ml"
   :brand "Zandy Touch"
@@ -63,7 +63,7 @@
   :size "50 ml"
   :how-to-use "Spray onto pulse points from about 15 cm away."
   :featured true
-  :images [{:file "seed-SEED-PF-01-1.jpg" :alt "Antique aqua glass scent flask"} {:file "seed-SEED-PF-01-2.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-PF-01-1.jpg" :alt "Antique aqua glass scent flask"} {:file "seed-SEED-PF-01-2.jpg" :alt "Warm candlelight against a dark background"}]}
 {:sku "SEED-PF-02"
   :name "Oud Evening Eau de Parfum 100 ml"
   :brand "Sample Brand"
@@ -87,7 +87,7 @@
   :description "A light body mist in a 100 ml spray bottle. Sample product description for display purposes."
   :size "100 ml"
   :how-to-use "Spray over the body after bathing."
-  :images [{:file "seed-SEED-PF-03-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-PF-03-1.jpg" :alt "Fresh tangerines with green leaves"}]}
 {:sku "SEED-BS-01"
   :name "Waist Shaping Belt"
   :brand "Sample Brand"
@@ -98,7 +98,7 @@
   :short-description "An adjustable waist belt."
   :description "An adjustable waist belt with a hook-and-loop fastening. Sample product description for display purposes."
   :how-to-use "Wrap around the waist over light clothing and fasten to a comfortable fit."
-  :images [{:file "seed-SEED-BS-01-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-BS-01-1.jpg" :alt "Close-up of a waist in high-waisted black jeans"}]}
 {:sku "SEED-BS-02"
   :name "Firming Body Contour Cream 200 ml"
   :brand "Zandy Touch"
@@ -111,7 +111,7 @@
   :size "200 ml"
   :how-to-use "Massage onto the skin once or twice a day."
   :featured true
-  :images [{:file "seed-SEED-BS-02-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-BS-02-1.jpg" :alt "Woman applying cream to her shoulder"}]}
 {:sku "SEED-BS-03"
   :name "Seamless Shapewear Bodysuit"
   :brand "Sample Brand"
@@ -122,7 +122,7 @@
   :short-description "A seamless bodysuit."
   :description "A seamless stretch bodysuit. Sample product description for display purposes."
   :how-to-use "Machine wash cold on a gentle cycle and dry flat."
-  :images [{:file "seed-SEED-BS-03-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-BS-03-1.jpg" :alt "Back view of a woman in a black fitted sports top"}]}
 {:sku "SEED-BC-01"
   :name "Shea Butter Body Lotion 400 ml"
   :brand "Zandy Touch"
@@ -136,7 +136,7 @@
   :how-to-use "Apply to the body after bathing."
   :ingredients "Aqua, shea butter, glycerin (sample listing)."
   :featured true
-  :images [{:file "seed-SEED-BC-01-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-BC-01-1.jpg" :alt "Open glass jar of white body butter"}]}
 {:sku "SEED-BC-02"
   :name "Coffee Body Scrub 250 g"
   :brand "Zandy Touch"
@@ -148,7 +148,7 @@
   :description "A body scrub made with ground coffee in a 250 g jar. Sample product description for display purposes."
   :size "250 g"
   :how-to-use "Massage onto damp skin in the shower, then rinse."
-  :images [{:file "seed-SEED-BC-02-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-BC-02-1.jpg" :alt "Coffee beans spilling from a glass jar onto a cloth"}]}
 {:sku "SEED-BC-03"
   :name "Nourishing Body Oil 100 ml"
   :brand "Sample Brand"
@@ -160,7 +160,7 @@
   :description "A body oil in a 100 ml glass bottle. Sample product description for display purposes."
   :size "100 ml"
   :how-to-use "Smooth onto damp skin after bathing."
-  :images [{:file "seed-SEED-BC-03-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-BC-03-1.jpg" :alt "Woman holding a dropper of body oil"}]}
 {:sku "SEED-BC-04"
   :name "Moisturising Hand Cream 75 ml"
   :brand "Sample Brand"
@@ -196,7 +196,7 @@
   :description "A fibre drink mix in 14 single-serve sachets. Sample product description for display purposes."
   :size "14 sachets"
   :how-to-use "Stir one sachet into a glass of water."
-  :images [{:file "seed-SEED-WL-02-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-WL-02-1.jpg" :alt "Two glasses of pink fruit smoothie"}]}
 {:sku "SEED-WL-03"
   :name "Kitchen Scale and Body Tape Set"
   :brand "Sample Brand"
@@ -233,7 +233,7 @@
   :description "A dietary supplement in a bottle of 60 capsules. Sample product description for display purposes."
   :size "60 capsules"
   :how-to-use "Follow the directions on the label."
-  :images [{:file "seed-SEED-HW-02-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-HW-02-1.jpg" :alt "Amber softgel capsules in a blister pack"}]}
 {:sku "SEED-HW-03"
   :name "Daily Multivitamin, 90 tablets"
   :brand "Sample Brand"
@@ -245,7 +245,7 @@
   :description "A multivitamin in a bottle of 90 tablets. Sample product description for display purposes."
   :size "90 tablets"
   :how-to-use "Follow the directions on the label."
-  :images [{:file "seed-SEED-HW-03-1.jpg" :alt "Placeholder image: a real photo is still to be added"}]}
+  :images [{:file "seed-SEED-HW-03-1.jpg" :alt "White tablets on a green leaf"}]}
 {:sku "SEED-HW-04"
   :name "Omega-3 Fish Oil Dietary Supplement, 60 softgels"
   :brand "Sample Brand"

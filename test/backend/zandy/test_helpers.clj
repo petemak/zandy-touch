@@ -98,16 +98,37 @@
 
 (defn db [ctx] (d/db (:conn ctx)))
 
+(defn jpeg-bytes
+  "A small solid-colour JPEG."
+  ([] (jpeg-bytes 64 48))
+  ([w h]
+   (let [img (java.awt.image.BufferedImage. w h java.awt.image.BufferedImage/TYPE_INT_RGB)
+         out (java.io.ByteArrayOutputStream.)]
+     (javax.imageio.ImageIO/write img "jpg" out)
+     (.toByteArray out))))
+
+(defn temp-jpeg!
+  "A temporary JPEG file (attach-file! reads from a file)."
+  ([] (temp-jpeg! 64 48))
+  ([w h]
+   (let [f (java.io.File/createTempFile "test-pic" ".jpg")]
+     (java.nio.file.Files/write (.toPath f) ^bytes (jpeg-bytes w h) (make-array java.nio.file.OpenOption 0))
+     f)))
+
 (defn seed-product!
-  "A published product with one photo record. Returns the product map from the catalog."
+  "A published product with one picture, made through the same catalog functions the API uses.
+  Returns the product map from the catalog."
   [ctx {:keys [name price stock sku category brand own-brand]
         :or {name "Glow Serum" price 85000 stock 10 category "skincare" brand "Zandy Touch"}}]
-  (let [photo-id (catalog/create-photo! ctx {:id (random-uuid) :original-filename "x.jpg" :content-type "image/jpeg" :width 800 :height 800})]
-    (catalog/create-product! ctx {}
-                             (cond-> {:name name :brand brand :is-own-brand (boolean own-brand) :category-slug category :price price
-                                      :status "published" :stock-quantity stock
-                                      :images [{:id (str photo-id) :alt "Photo"}]}
-                               sku (assoc :sku sku)))))
+  (let [p (catalog/create-product! ctx {}
+                                   (cond-> {:name name :brand brand :is-own-brand (boolean own-brand) :category-slug category
+                                            :price price :status "draft" :stock-quantity stock}
+                                     sku (assoc :sku sku)))
+        r (catalog/attach-file! ctx {:filename "x.jpg"} (:id p) (temp-jpeg!))]
+    (catalog/update-product! ctx {} (:id p)
+                             {:version (:version (catalog/get-product ctx (:id p)))
+                              :status "published"
+                              :images [{:id (str (get-in r [:image :id])) :alt "Photo"}]})))
 
 (defn order-body
   "A valid POST /api/orders body for the products given as [[product qty] ...]."
@@ -127,34 +148,43 @@
   ([app items idem overrides]
    (call app :post "/api/orders" :body (order-body items overrides) :headers {"Idempotency-Key" idem})))
 
-(defn jpeg-bytes
-  "A small solid-colour JPEG."
-  ([] (jpeg-bytes 64 48))
-  ([w h]
-   (let [img (java.awt.image.BufferedImage. w h java.awt.image.BufferedImage/TYPE_INT_RGB)
-         out (java.io.ByteArrayOutputStream.)]
-     (javax.imageio.ImageIO/write img "jpg" out)
-     (.toByteArray out))))
-
 (defn multipart
-  "Builds a multipart/form-data body from [[filename bytes] ...]. Returns {:content-type :body}."
-  [files]
-  (let [boundary "----zandytestboundary"
-        out (java.io.ByteArrayOutputStream.)
-        w (fn [^String s] (.write out (.getBytes s "UTF-8")))]
-    (doseq [[filename ^bytes bs] files]
-      (w (str "--" boundary "\r\nContent-Disposition: form-data; name=\"files\"; filename=\"" filename "\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
-      (.write out bs)
-      (w "\r\n"))
-    (w (str "--" boundary "--\r\n"))
-    {:content-type (str "multipart/form-data; boundary=" boundary)
-     :body (java.io.ByteArrayInputStream. (.toByteArray out))}))
+  "Builds a multipart/form-data body from [[filename bytes] ...] in the field `field` (default \"files\").
+  Returns {:content-type :body}."
+  ([files] (multipart "files" files))
+  ([field files]
+   (let [boundary "----zandytestboundary"
+         out (java.io.ByteArrayOutputStream.)
+         w (fn [^String s] (.write out (.getBytes s "UTF-8")))]
+     (doseq [[filename ^bytes bs] files]
+       (w (str "--" boundary "\r\nContent-Disposition: form-data; name=\"" field "\"; filename=\"" filename "\"\r\nContent-Type: application/octet-stream\r\n\r\n"))
+       (.write out bs)
+       (w "\r\n"))
+     (w (str "--" boundary "--\r\n"))
+     {:content-type (str "multipart/form-data; boundary=" boundary)
+      :body (java.io.ByteArrayInputStream. (.toByteArray out))})))
 
-(defn upload!
-  "POSTs photos as staff."
-  [connector session files & {:keys [idem]}]
-  (let [{:keys [content-type body]} (multipart files)]
-    (call connector :post "/api/admin/photos"
+(defn post-multipart!
+  "POSTs a multipart body as staff. `idem` false sends no Idempotency-Key."
+  [connector session path field files & {:keys [idem]}]
+  (let [{:keys [content-type body]} (multipart field files)]
+    (call connector :post path
           :raw-body body
-          :headers {"Content-Type" content-type "Cookie" (:cookie session) "X-CSRF-Token" (:csrf session)
-                    "Idempotency-Key" (or idem (str (random-uuid)))})))
+          :headers (cond-> {"Content-Type" content-type "Cookie" (:cookie session) "X-CSRF-Token" (:csrf session)}
+                     (not= idem false) (assoc "Idempotency-Key" (or idem (str (random-uuid))))))))
+
+(defn upload-images!
+  "POST /api/admin/product-images (files named by SKU)."
+  [connector session files & {:keys [idem]}]
+  (post-multipart! connector session "/api/admin/product-images" "files" files :idem idem))
+
+(defn upload-to-product!
+  "POST /api/admin/products/{id}/images."
+  [connector session product-id files & {:keys [idem]}]
+  (post-multipart! connector session (str "/api/admin/products/" product-id "/images") "files" files :idem idem))
+
+(defn import-csv!
+  "POST /api/admin/product-imports with CSV text (or bytes)."
+  [connector session csv & {:keys [idem dry-run]}]
+  (post-multipart! connector session (str "/api/admin/product-imports" (when dry-run "?dryRun=true")) "file"
+                   [["products.csv" (if (string? csv) (.getBytes ^String csv "UTF-8") csv)]] :idem idem))

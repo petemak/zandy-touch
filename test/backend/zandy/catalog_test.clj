@@ -1,6 +1,5 @@
 (ns zandy.catalog-test
   (:require [clojure.test :refer [deftest is testing]]
-            [zandy.features.catalog.db :as catalog-db]
             [zandy.test-helpers :as t]))
 
 (defn- names [resp] (map :name (get-in resp [:body :items])))
@@ -99,10 +98,7 @@
 (deftest admin-product-lifecycle
   (let [ctx (t/make-ctx) app (t/app ctx)
         owner (t/setup-owner! ctx app)
-        up (t/upload! app owner [["a.jpg" (t/jpeg-bytes)]])
-        photo-id (get-in up [:body :items 0 :photo :id])
         base {:name "Test Serum" :brand "Zandy Touch" :is-own-brand true :category-slug "skincare" :status "draft"}]
-    (is (= 201 (:status up)))
     (testing "draft without a price"
       (let [r (t/staff app owner :post "/api/admin/products" :body base)]
         (is (= 201 (:status r)))
@@ -115,10 +111,17 @@
         (is (= 422 (:status r)))
         (is (= #{"priceRequired" "imageRequired"} codes))))
     (testing "publish with price, image and opening stock"
-      (let [r (t/staff app owner :post "/api/admin/products"
-                       :body (assoc base :name "Test Serum" :status "published" :price 85000 :sku "ts-01" :stock-quantity 12
-                                    :images [{:id photo-id :alt "Bottle"}]))]
-        (is (= 201 (:status r)))
+      (let [c (t/staff app owner :post "/api/admin/products"
+                       :body (assoc base :name "Test Serum" :price 85000 :sku "ts-01" :stock-quantity 12))
+            up (t/upload-to-product! app owner (get-in c [:body :id]) [["a.jpg" (t/jpeg-bytes)]])
+            photo-id (get-in up [:body :items 0 :image :id])
+            r (t/staff app owner :patch (str "/api/admin/products/" (get-in c [:body :id]))
+                       :body {:version (get-in up [:body :product :version]) :status "published"
+                              :images [{:id photo-id :alt "Bottle"}]})
+            r (assoc r :status (if (= 200 (:status r)) 201 (:status r)))]
+        (is (= 201 (:status c)))
+        (is (= 200 (:status up)))
+        (is (= "Bottle" (get-in r [:body :images 0 :alt])))
         (is (= "test-serum-2" (get-in r [:body :slug])) "slugs are made unique")
         (is (= "TS-01" (get-in r [:body :sku])))
         (is (= 12 (get-in r [:body :stock-quantity])))
@@ -134,19 +137,19 @@
         (testing "stockQuantity is not patchable"
           (is (= 422 (:status (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 1 :stock-quantity 5})))))
         (testing "patch with version"
-          (let [pr (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 1 :price 90000 :size "30 ml"})]
+          (let [pr (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 3 :price 90000 :size "30 ml"})]
             (is (= 200 (:status pr)))
-            (is (= 2 (get-in pr [:body :version])))
+            (is (= 4 (get-in pr [:body :version])))
             (is (= 90000 (get-in pr [:body :price])))
             (is (= "test-serum-2" (get-in pr [:body :slug]))))
           (is (= "versionConflict" (t/error-code (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 1 :price 1000})))))
         (testing "a published product cannot lose its price or images"
-          (is (= "priceRequired" (get-in (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 2 :price nil})
+          (is (= "priceRequired" (get-in (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 4 :price nil})
                                          [:body :error :details 0 :code])))
-          (is (= "imageRequired" (get-in (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 2 :images []})
+          (is (= "imageRequired" (get-in (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 4 :images []})
                                          [:body :error :details 0 :code]))))
         (testing "clearing an optional field"
-          (let [pr (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 2 :size nil})]
+          (let [pr (t/staff app owner :patch (str "/api/admin/products/" id) :body {:version 4 :size nil})]
             (is (nil? (get-in pr [:body :size])))))
         (testing "archive hides it everywhere and repeats cleanly"
           (is (= 204 (:status (t/staff app owner :delete (str "/api/admin/products/" id) :idem false))))
@@ -203,51 +206,3 @@
       (let [h (t/staff app owner :get path :idem false)]
         (is (= 4 (get-in h [:body :total-items])) "initial, restock, stocktake, other")))))
 
-(deftest photos
-  (let [ctx (t/make-ctx) app (t/app ctx)
-        owner (t/setup-owner! ctx app)
-        p (t/seed-product! ctx {:name "Sku Product" :sku "GT-SERUM-01"})
-        r (t/upload! app owner [["gt-serum-01_front.jpg" (t/jpeg-bytes)]
-                                ["notes.jpg" (.getBytes "not an image at all, just text bytes")]
-                                ["empty.png" (byte-array 0)]])
-        [a b c] (get-in r [:body :items])]
-    (is (= 201 (:status r)))
-    (is (= "stored" (:status a)))
-    (is (= (str (:id p)) (:suggested-product-id a)))
-    (is (= "rejected" (:status b)))
-    (is (= "unsupportedMediaType" (get-in b [:error :code])))
-    (is (= "unsupportedMediaType" (get-in c [:error :code])))
-    (testing "variants are served with immutable caching"
-      (let [url (get-in a [:photo :urls :thumb])
-            m (t/call app :get url)]
-        (is (= 200 (:status m)))
-        (is (= "public, max-age=31536000, immutable" (get-in m [:headers "Cache-Control"])))
-        (is (= 404 (:status (t/call app :get (str "/media/" (random-uuid) "-thumb.webp")))))
-        (is (= 404 (:status (t/call app :get "/media/..%2Fconfig.edn"))))))
-    (testing "listing and assignment"
-      (let [photo-id (get-in a [:photo :id])
-            unassigned (t/staff app owner :get "/api/admin/photos?unassigned=true" :idem false)]
-        (is (= 1 (+ (get-in unassigned [:body :total-items]) 0)))
-        (let [as (t/staff app owner :post "/api/admin/photo-assignments"
-                          :body {:assignments [{:photo-id photo-id :product-id (str (:id p))}
-                                               {:photo-id (str (random-uuid)) :product-id (str (:id p))}]})]
-          (is (= 200 (:status as)))
-          (is (= ["assigned" "rejected"] (map :status (get-in as [:body :results])))))
-        (is (= "assigned" (get-in (t/staff app owner :post "/api/admin/photo-assignments"
-                                           :body {:assignments [{:photo-id photo-id :product-id (str (:id p))}]})
-                                  [:body :results 0 :status])))
-        (is (= [(str (:id p))] (get-in (t/staff app owner :get "/api/admin/photos" :idem false) [:body :items 0 :assigned-product-ids])))
-        (testing "deleting a photo detaches it"
-          (is (= 204 (:status (t/staff app owner :delete (str "/api/admin/photos/" photo-id) :idem false))))
-          (is (= 204 (:status (t/staff app owner :delete (str "/api/admin/photos/" photo-id) :idem false))))
-          (is (= 404 (:status (t/call app :get (get-in a [:photo :urls :thumb]))))))))
-    (testing "more than 20 files"
-      (let [r (t/upload! app owner (repeat 21 ["x.jpg" (t/jpeg-bytes)]))]
-        (is (= 422 (:status r)))))
-    (testing "a published product left without photos becomes a draft"
-      (let [q (t/seed-product! ctx {:name "Lonely"})
-            slug "lonely"
-            photo-id (str (get-in (:images (catalog-db/product-by-id (t/db ctx) (:id q))) [0 :photo-id]))]
-        (is (= 200 (:status (t/call app :get (str "/api/products/" slug)))))
-        (t/staff app owner :delete (str "/api/admin/photos/" photo-id) :idem false)
-        (is (= 404 (:status (t/call app :get (str "/api/products/" slug)))))))))

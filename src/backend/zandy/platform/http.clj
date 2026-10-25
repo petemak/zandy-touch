@@ -103,10 +103,18 @@
 (defn- query-map [req]
   (into {} (map (fn [[k v]] [(keyword (json/camel->kebab (name k))) v])) (:query-params req)))
 
-(defn- multipart-fingerprint [params]
+(defn- file-parts [params]
+  (mapcat (fn [v] (cond (and (map? v) (:tempfile v)) [v] (sequential? v) (filter :tempfile v) :else []))
+          (vals params)))
+
+(defn- multipart-fingerprint
+  "Hash of everything the client sent: the query, the plain fields and every file's name and content."
+  [params query]
   (util/fingerprint
-   (for [{:keys [filename tempfile]} (let [f (get params "files")] (if (map? f) [f] f))]
-     [filename (when tempfile (util/sha256-bytes-hex (java.nio.file.Files/readAllBytes (.toPath ^java.io.File tempfile))))])))
+   [query
+    (into (sorted-map) (remove (fn [[_ v]] (or (and (map? v) (:tempfile v)) (sequential? v)))) params)
+    (for [{:keys [filename ^java.io.File tempfile]} (file-parts params)]
+      [filename (util/sha256-bytes-hex (java.nio.file.Files/readAllBytes (.toPath tempfile)))])]))
 
 (defn wrap-validate
   "Decodes and validates query, JSON body and path against the route's Malli schemas."
@@ -119,8 +127,12 @@
           (:multipart? route)
           (let [req (multipart/multipart-params-request req {})
                 params (:multipart-params req)]
-            (handler (assoc req :parameters {:query q :path (:path-params req) :body nil}
-                            :multipart params :fingerprint (multipart-fingerprint params))))
+            (try
+              (handler (assoc req :parameters {:query q :path (:path-params req) :body nil}
+                              :multipart params :fingerprint (multipart-fingerprint params q)))
+              ;; uploads are temporary files: remove them whatever happens (also on an idempotent replay)
+              (finally (doseq [{:keys [^java.io.File tempfile]} (file-parts params)]
+                         (.delete tempfile)))))
 
           (and body mutating?)
           (do

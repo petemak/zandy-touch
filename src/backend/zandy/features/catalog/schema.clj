@@ -21,6 +21,10 @@
    [:id uuid-string]
    [:alt {:optional true} [:maybe [:string {:max 140}]]]])
 
+(def Sku
+  [:and [:string {:min 1 :max 40}]
+   [:re {:error/code "invalid" :error/message "A SKU may contain only letters, digits and -."} #"^[A-Za-z0-9-]+$"]])
+
 (def Price [:int {:min 100 :max 100000000}])
 
 (def CreateProduct
@@ -37,7 +41,7 @@
    [:ingredients {:optional true} [:string {:max 1000}]]
    [:featured {:optional true} :boolean]
    [:status [:enum "draft" "published"]]
-   [:sku {:optional true} [:string {:max 40}]]
+   [:sku {:optional true} Sku]
    [:images {:optional true} [:vector {:max 6} Image]]
    [:stock-quantity {:optional true} [:int {:min 0 :max 100000}]]])
 
@@ -56,7 +60,7 @@
    [:ingredients {:optional true} [:maybe [:string {:max 1000}]]]
    [:featured {:optional true} :boolean]
    [:status {:optional true} [:enum "draft" "published"]]
-   [:sku {:optional true} [:maybe [:string {:max 40}]]]
+   [:sku {:optional true} [:maybe Sku]]
    [:images {:optional true} [:vector {:max 6} Image]]])
 
 (def AdminProductsQuery
@@ -77,3 +81,7 @@
    [:expected-quantity {:optional true} [:int {:min 0}]]])
 
 (def PagingQuery v/PagingQuery)
+
+(def Publications
+  [:map {:closed true}
+   [:product-ids [:vector {:min 1 :max 500} uuid-string]]])

@@ -1,65 +1,45 @@
 (ns zandy.features.photos.routes
-  "Photo library: bulk upload, listing, assignment, deletion, and serving the media files
-  (contract sections 8.2 and 13)."
-  (:require [clojure.java.io :as io]
-            [zandy.features.catalog.api :as catalog]
+  "Product pictures and the bulk product import (contract 8.2), and the media files (section 13).
+  There is no photo library: every picture is uploaded onto a product."
+  (:require [zandy.features.catalog.api :as catalog]
+            [zandy.features.photos.imports :as imports]
             [zandy.features.photos.schema :as schema]
             [zandy.platform.errors :as errors]
             [zandy.platform.media :as media]
-            [zandy.platform.util :as util]
             [zandy.platform.validation :as v]))
 
-(defn- uploaded-files [req]
-  (let [f (get (:multipart req) "files")]
-    (cond (map? f) [f] (sequential? f) (vec f) :else [])))
+(def ^:private max-product-files 6)
+(def ^:private max-bulk-files 20)
 
-(defn- stored-item [ctx filename photo-id]
-  {:filename filename :status "stored"
-   :photo {:id photo-id :urls (media/urls photo-id) :assigned-product-ids []}
-   :suggested-product-id (catalog/find-product-id-by-sku-prefix ctx filename)
-   :error nil})
-
-(defn upload [{:keys [ctx user] :as req}]
-  (let [files (uploaded-files req)]
+(defn- require-files!
+  "The uploaded files of the `files` field, 1 to `limit` of them, else a 422 in the contract's shape."
+  [req limit]
+  (let [files (imports/uploaded req "files")]
     (when (empty? files)
-      (errors/fail! :malformedRequest "Send the photos as multipart/form-data in the field \"files\"."))
-    (when (> (count files) 20)
-      (errors/validation-failed [(errors/field-error "files" "tooManyFiles" "Upload at most 20 photos at a time.")]))
-    (let [items
-          (mapv (fn [{:keys [filename tempfile]}]
-                  (try
-                    (let [photo-id (random-uuid)
-                          result (media/process-upload! (:media-store ctx) (:image-processor ctx) photo-id tempfile)]
-                      (if-let [ok (:ok result)]
-                        (do (catalog/create-photo! ctx {:id photo-id :original-filename filename
-                                                        :content-type (:content-type ok) :width (:width ok)
-                                                        :height (:height ok) :uploaded-by-eid (:eid user)})
-                            (stored-item ctx filename photo-id))
-                        {:filename filename :status "rejected" :photo nil :suggested-product-id nil :error (:error result)}))
-                    (finally (when tempfile (io/delete-file tempfile true)))))
-                files)]
-      {:status 201 :body {:items items}})))
+      (errors/validation-failed [(errors/field-error "files" "required" "Send the pictures as multipart/form-data in the field \"files\".")]))
+    (when (> (count files) limit)
+      (errors/validation-failed [(errors/field-error "files" "tooManyFiles" (str "Send at most " limit " pictures at a time."))]))
+    files))
 
-(defn list-photos [{:keys [ctx parameters]}]
-  (let [q (:query parameters)
-        page (catalog/list-photos ctx {:unassigned? (:unassigned q) :page (:page q) :page-size (or (:page-size q) 40)})]
+(defn upload-to-product [{:keys [ctx parameters user] :as req}]
+  (let [id (v/parse-uuid-or-404 (get-in parameters [:path :id]))
+        product (or (catalog/get-product ctx id) (errors/fail! :notFound "Product not found."))
+        files (require-files! req max-product-files)
+        items (imports/attach-to-product! ctx user id (:sku product) files)]
     {:status 200
-     :body (update page :items (fn [items] (mapv (fn [p] {:id (:id p) :filename (:filename p) :urls (media/urls (:id p))
-                                                          :assigned-product-ids (:assigned-product-ids p)
-                                                          :uploaded-at (:uploaded-at p)})
-                                                 items)))}))
+     :body {:items items
+            :product (catalog/admin-product-view ctx (catalog/get-product ctx id))}}))
 
-(defn assign [{:keys [ctx parameters user]}]
-  (let [entries (mapv (fn [{:keys [photo-id product-id]}] {:photo-id (parse-uuid photo-id) :product-id (parse-uuid product-id)})
-                      (get-in parameters [:body :assignments]))
-        results (catalog/assign-photos! ctx {:user-eid (:eid user)} entries)]
-    {:status 200 :body {:results (mapv #(util/compact %) results)}}))
+(defn upload-by-sku [{:keys [ctx user] :as req}]
+  (let [files (require-files! req max-bulk-files)]
+    {:status 200 :body {:items (imports/attach-by-sku! ctx user files)}}))
 
-(defn delete-photo [{:keys [ctx parameters]}]
-  (let [id (v/parse-uuid-or-404 (get-in parameters [:path :id]))]
-    (catalog/delete-photo! ctx id)
-    (media/delete-photo! (:media-store ctx) id)
-    {:status 204 :body nil}))
+(defn import-products [{:keys [ctx parameters user] :as req}]
+  (let [table (imports/read-csv-upload (imports/uploaded req "file"))]
+    {:status 200 :body (imports/run-import! ctx user table (boolean (get-in parameters [:query :dry-run])))}))
+
+(defn import-template [_req]
+  (imports/template-response))
 
 (def ^:private media-file-re #"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-(thumb|medium|large)\.webp$")
 
@@ -73,11 +53,12 @@
       (errors/fail! :notFound "Not found."))))
 
 (def routes
-  [{:method :post :path "/api/admin/photos" :name :photos/upload :access :staff :idempotent? true :multipart? true
-    :handler upload}
-   {:method :get :path "/api/admin/photos" :name :photos/list :access :staff
-    :parameters {:query schema/PhotosQuery} :handler list-photos}
-   {:method :post :path "/api/admin/photo-assignments" :name :photos/assign :access :staff
-    :parameters {:body schema/Assignments} :handler assign}
-   {:method :delete :path "/api/admin/photos/:id" :name :photos/delete :access :staff :handler delete-photo}
+  [{:method :post :path "/api/admin/products/:id/images" :name :photos/upload-to-product :access :staff
+    :idempotent? true :multipart? true :handler upload-to-product}
+   {:method :post :path "/api/admin/product-images" :name :photos/upload-by-sku :access :staff
+    :idempotent? true :multipart? true :handler upload-by-sku}
+   {:method :post :path "/api/admin/product-imports" :name :photos/import :access :staff
+    :idempotent? true :multipart? true :parameters {:query schema/ImportQuery} :handler import-products}
+   {:method :get :path "/api/admin/product-import-template" :name :photos/import-template :access :staff
+    :handler import-template}
    {:method :get :path "/media/:file" :name :photos/media :access :public :handler serve-media}])

@@ -159,7 +159,7 @@ Roots `src/shared/zandy/shared/` (`.cljc`, runs on the JVM inside `ssr` and in t
 | `shared.ui.*`, `shared.pages.*` | Replicant components and the public page views (P1 to P17), pure functions of page data. |
 | `shared.document` | `render-page`: full HTML document via `replicant.string`, including head tags, `<script id="initial-state" type="application/json">` (with `<` escaped) and the script/CSS links. Called only by `ssr.render`. |
 | `frontend.main`, `frontend.state`, `frontend.effects`, `frontend.api`, `frontend.router`, `frontend.cart-store` | Browser entry, single state atom with data-only actions, effects shell, the only `js/fetch` user (relative URLs under `/api`, no base URL), client navigation, localStorage cart. |
-| `frontend.admin.*` | Admin area A1 to A12, client-rendered only. |
+| `frontend.admin.*` | Admin area A1 to A13, client-rendered only. A13 (Help) renders topics generated from `admin-help.md` by `scripts/build/help.clj` (frontend-cljs) into a committed data namespace; no runtime Markdown parser and no backend endpoint. Owner-only topics are filtered by the session role. |
 | `frontend.scenes.*` | Portfolio scenes; not reachable from `frontend.main`. |
 
 Dependency list:
@@ -259,7 +259,7 @@ Two builders, one tree each. Anything not listed is read-only for builders. Ever
 | `scripts/build/**`, `scripts/check/frontend_deps.clj` | frontend-cljs | `assets.clj` (4.2); the frontend fitness script. |
 | `Dockerfile.backend`, `Dockerfile.ssr`, `deploy/**`, `scripts/ops/**`, CI config | deployment-engineer | Whatever its chosen hosting needs (proxy config, service definitions, transactor properties, environment templates with variable names only, CDN rules, backup and restore, smoke scripts, `deploy/COSTS.md`). Never edits application source. |
 | `design-tokens.css`, `assets/**`, `scripts/design/**`, `visual-guide.md`, `brand-brief.md` | visual-designer | Read-only to builders. |
-| `design-spec.md`, `user-journeys.md`, `scope-checklist.md` | ux-designer | Read-only to builders. |
+| `design-spec.md`, `user-journeys.md`, `scope-checklist.md`, `admin-help.md` | ux-designer | Read-only to builders. `admin-help.md` is the staff help text (A13); frontend-cljs converts it at build time and never edits it. |
 | `api-contract.md` | architect amends (ux-designer drafted) | Builders request changes by message. |
 | `engineering-standards.md`, `business-context.md`, `architecture.md`, `architecture-review.md` | the human owner / architect | Read-only to builders. |
 | `target/`, `ssr/target/`, `media/`, `.cpcache/`, `.shadow-cljs/`, `node_modules/` | generated, git-ignored | Never committed. |
@@ -268,7 +268,7 @@ Two builders, one tree each. Anything not listed is read-only for builders. Ever
 
 ### 4.2 Static assets and design-tokens.css (visual-guide.md section 11)
 - Public URLs: `/static/design-tokens.css`, `/static/assets/fonts/...`, `/static/assets/{logo,icons,badges}/...`, `/static/assets/favicon.svg` and the PNG icons and `site.webmanifest`, `/static/css/...`, `/static/js/main.<hash>.js`. The `@font-face` URLs are relative (`assets/fonts/x.woff2`) and resolve correctly because the tokens CSS and `assets/` stay side by side under `/static/`. No file in design-tokens.css needs editing.
-- `bb scripts/build/assets.clj` (frontend-cljs) copies `design-tokens.css`, `assets/` and `styles/**` into `target/static/` (CSS files get a content hash in the file name; an `asset-manifest.edn` maps logical names to hashed names and `ssr` reads it at boot), and never modifies sources. shadow-cljs writes hashed bundles to `target/static/js`. Build: `npm ci && npx shadow-cljs release app && bb scripts/build/assets.clj`.
+- `bb scripts/build/assets.clj` (frontend-cljs) copies `design-tokens.css`, `assets/` and `styles/**` into `target/static/` (CSS files get a content hash in the file name; an `asset-manifest.edn` maps logical names to hashed names and `ssr` reads it at boot), and never modifies sources. shadow-cljs writes hashed bundles to `target/static/js`. Build: `scripts/build/build.sh` (runs `npm ci`, `bb scripts/build/help.clj` to regenerate the staff help data from `admin-help.md`, `npx shadow-cljs release app`, `bb scripts/build/assets.clj`, then `bb scripts/build/help.clj --check`).
 - Release layout: `Dockerfile.ssr` image contains the `ssr` classpath; the static files are copied by the deploy script into the host directory `STATIC_DIR`. The deploy script adds new files and keeps files from earlier releases for at least 14 days, so a CDN-cached HTML page that still names last release's bundle never gets a 404 (check R5).
 - `/favicon.svg` may also be served at the root by `ssr` for crawlers.
 

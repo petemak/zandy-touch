@@ -87,4 +87,13 @@ Rules:
   name each new dependency you added and one line on why you
   picked it.
 
+- If admin-help.md exists, build the in-admin help from it:
+  convert it at build time (no runtime Markdown parser) into
+  topic pages, show each role only its topics (a direct link to
+  a topic the role may not see shows a short notice instead),
+  and give every admin page a "How do I…?" link to the topic
+  admin-help.md maps to it. Never edit admin-help.md; if a page
+  name, button label or step in it no longer matches what you
+  built, say so in your summary so ux-designer can fix the text.
+
 Report which files you created or changed when done.

@@ -51,7 +51,10 @@
             d (:body (t/call app :get "/api/delivery-areas"))]
         (is (= "+256706105779" (:whatsapp s)))
         (is (= "sandratonanyonjo@gmail.com" (:email s)))
-        (is (= {:instagram nil :tiktok nil} (:social s)))
+        (is (= {:instagram nil
+                :tiktok "https://www.tiktok.com/@zandytouch"
+                :facebook "https://www.facebook.com/nanyonjo.sandra.1/"}
+               (:social s)))
         (is (= {:days "Sunday" :opens "10:00" :closes "21:30"} (second (:opening-hours s))))
         (is (false? (:allow-other-city d)))
         (is (= "Fort Portal" (last (get-in d [:countries 0 :cities]))))))))

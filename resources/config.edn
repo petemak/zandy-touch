@@ -47,7 +47,8 @@
              :opening-hours [{:days "Monday to Saturday" :opens "08:00" :closes "22:00"}
                              {:days "Sunday" :opens "10:00" :closes "21:30"}]
              :social        {:instagram #or [#env SOCIAL_INSTAGRAM nil]
-                             :tiktok    #or [#env SOCIAL_TIKTOK nil]}
+                             :tiktok    #or [#env SOCIAL_TIKTOK "https://www.tiktok.com/@zandytouch"]
+                             :facebook  #or [#env SOCIAL_FACEBOOK "https://www.facebook.com/nanyonjo.sandra.1/"]}
              :countries     [{:code "UG" :name "Uganda"
                               :cities ["Kampala" "Entebbe" "Jinja" "Mbale" "Mbarara" "Fort Portal"]}]
              :allow-other-city? false}

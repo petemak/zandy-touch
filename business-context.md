@@ -136,4 +136,8 @@ Policies and data
   together with the product photos, each photo named after the product's SKU (for example ZT-SKIN-001-1.jpg). Imported
   products are drafts until staff review and publish them. A row whose SKU already exists updates that product.
   An import never changes stock of an existing product; stock changes go through stock adjustments.
+- Staff help: the admin has built-in help with step-by-step instructions for every admin task (orders, products,
+  stock, bulk import, staff accounts, messages, passwords). It is written and kept up to date by the agent team,
+  not by the owner. Each person sees only the topics for their role: support staff do not see owner-only tasks
+  such as managing staff accounts. Screenshots are added later, once the screens are final.
 - Catalogue pages may be served from cache for up to a day if the backend is down; logo and icons are cached for 1 day.]

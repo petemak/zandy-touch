@@ -36,6 +36,19 @@
 (defn- placeholder? [v]
   (and (vector? v) (= 1 (count v)) (keyword? (first v)) (= "event" (namespace (first v)))))
 
+(defn- picked-files
+  "Files from a file input change or a drop, as plain maps (the File object
+  stays inside :file). The input is cleared so the same files can be picked
+  again."
+  [^js js-event]
+  (let [^js target (.-target js-event)
+        ^js dt (.-dataTransfer js-event)
+        ^js file-list (or (some-> dt .-files) (.-files target))
+        files (mapv (fn [^js f] {:name (.-name f) :size (.-size f) :type (.-type f) :file f})
+                    (array-seq file-list))]
+    (when (= "file" (.-type target)) (set! (.-value target) ""))
+    files))
+
 (defn enrich
   "Replace [:event/...] placeholders in an action with values read from the
   DOM event."
@@ -49,6 +62,7 @@
            :event/target.checked (.-checked target)
            :event/target.open (.-open target)
            :event/key (.-key js-event)
+           :event/files (picked-files js-event)
            :event/form-data (form-data->map target)
            v)
          v))
