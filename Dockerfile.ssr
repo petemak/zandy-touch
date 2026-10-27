@@ -1,0 +1,89 @@
+# syntax=docker/dockerfile:1.7
+# Zandy Touch frontend server (SSR) and the static files it serves. Build from the repository root:
+#   docker build -f Dockerfile.ssr -t zandy/ssr:<release> .
+#   docker build -f Dockerfile.ssr --target static --output type=local,dest=./out/static .
+# The first command builds the server image. The second exports the static files (bundle, CSS, fonts,
+# icons, asset-manifest.edn); deploy.sh copies them to STATIC_DIR on the host and keeps earlier files
+# for 14 days (architecture.md 4.2, check D-6).
+ARG JDK_IMAGE=eclipse-temurin:21-jdk-noble
+ARG JRE_IMAGE=eclipse-temurin:21-jre-noble
+
+# ---------------------------------------------------------------- build
+FROM ${JDK_IMAGE} AS build
+ARG CLOJURE_CLI_VERSION=1.12.4.1618
+ARG CLOJURE_CLI_INSTALL_SHA256=8a49ab11a639ce1d49e5459a7bfa8fcc74684ad3bc9acd181e3adc7a662918cf
+# Node is needed by shadow-cljs (the ClojureScript compiler's JavaScript side). 24 is the LTS line.
+ARG NODE_VERSION=24.22.1
+ARG NODE_SHA256=6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6
+# Babashka runs scripts/build/help.clj and assets.clj.
+ARG BB_VERSION=1.13.226
+ARG BB_SHA256=bf89e909c4025edf2d669921c81107435b7244840d8f4306f58439c328a342f9
+# All three checksums were computed on 25 Oct 2026 for linux x86_64 (the OVH VPS is x86_64).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates git xz-utils rlwrap \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL -o /tmp/linux-install.sh \
+      "https://github.com/clojure/brew-install/releases/download/${CLOJURE_CLI_VERSION}/linux-install.sh" \
+ && echo "${CLOJURE_CLI_INSTALL_SHA256}  /tmp/linux-install.sh" | sha256sum -c - \
+ && bash /tmp/linux-install.sh && rm /tmp/linux-install.sh \
+ && curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+ && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
+ && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 && rm /tmp/node.tar.xz \
+ && curl -fsSL -o /tmp/bb.tar.gz \
+      "https://github.com/babashka/babashka/releases/download/v${BB_VERSION}/babashka-${BB_VERSION}-linux-amd64-static.tar.gz" \
+ && echo "${BB_SHA256}  /tmp/bb.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/bb.tar.gz -C /usr/local/bin bb && rm /tmp/bb.tar.gz
+WORKDIR /build
+
+# --- browser bundle and static assets: scripts/build/build.sh (npm ci, help.clj, shadow-cljs release,
+#     assets.clj). Dependency manifests first so the npm layer is cached.
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY shadow-cljs.edn admin-help.md design-tokens.css ./
+COPY assets ./assets
+COPY styles ./styles
+COPY src/shared ./src/shared
+COPY src/frontend ./src/frontend
+COPY test/shared ./test/shared
+COPY test/frontend ./test/frontend
+COPY scripts/build ./scripts/build
+# npm ci already ran, so build.sh is told to skip its own.
+RUN SKIP_NPM=1 scripts/build/build.sh \
+ && bb scripts/build/help.clj --check \
+ && test -s target/static/asset-manifest.edn
+
+# --- frontend server: AOT-compile zandy.ssr.system and collect its classpath in /out.
+COPY ssr/deps.edn ./ssr/deps.edn
+RUN cd ssr && clojure -P
+COPY ssr/src ./ssr/src
+COPY ssr/resources ./ssr/resources
+COPY --chmod=0755 deploy/docker/jvm-runtime.sh /usr/local/bin/jvm-runtime.sh
+RUN jvm-runtime.sh /build/ssr /out zandy.ssr.system
+
+# ---------------------------------------------------------------- static (export only)
+FROM scratch AS static
+COPY --from=build /build/target/static /
+
+# ---------------------------------------------------------------- runtime (default target)
+FROM ${JRE_IMAGE} AS runtime
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --gid 10001 zandy \
+ && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin zandy
+COPY --from=build /out /app
+COPY --chmod=0755 deploy/docker/ssr-entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# Defaults only; compose.yaml sets JAVA_OPTS per service (D3: production -Xmx256m, staging -Xmx192m).
+# STATIC_DIR is a read-only bind mount of the host directory that deploy.sh fills.
+ENV PORT=8081 \
+    STATIC_DIR=/srv/static \
+    JAVA_OPTS="-Xmx256m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError"
+USER zandy
+WORKDIR /app
+EXPOSE 8081
+# /healthz asks the backend, so it also fails while the backend is down (the proxy uses /robots.txt).
+HEALTHCHECK --interval=15s --timeout=4s --start-period=90s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null || exit 1
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["serve"]

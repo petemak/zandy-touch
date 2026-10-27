@@ -1,0 +1,182 @@
+# Zandy Touch edge proxy (Caddy 2.11). Serves production and staging from one server.
+#
+# Public routing (architecture.md section 5), identical on both hostnames:
+#   /api/*  and  /media/*   -> backend   (response header X-Upstream: backend)
+#   everything else         -> ssr       (response header X-Upstream: ssr)
+# Internal listeners, reachable only on the private Docker network (no published port):
+#   :8088  production backend pool, the address ssr uses as API_BASE_URL (sites/production.caddy)
+#   :8089  staging backend pool (sites/staging.caddy)
+#   :8087  proxy self-check for the container health check
+#
+# Host names come from the environment (deploy/env.host.example). Until DNS exists use sslip.io names,
+# for example PROD_HOST=prod.203-0-113-10.sslip.io and STAGING_HOST=staging.203-0-113-10.sslip.io.
+#
+# Validated with `caddy validate` (v2.11.7) and exercised against local stand-in upstreams on the author's
+# machine (routing, X-Upstream, X-Client-Ip, spoof rejection, log redaction). Not yet run inside Docker.
+{
+	# Optional ACME contact address: deploy.sh writes caddy/acme-email.conf ("email <address>") from ACME_EMAIL in
+	# the host .env when one is set. Without it Caddy still obtains certificates (the address only receives expiry notices).
+	import /etc/caddy/conf.d/acme-*.conf
+
+	servers {
+		# Client address handling. When the TCP peer is inside Cloudflare's ranges the client address is
+		# the CF-Connecting-IP header; otherwise it is the TCP peer, and the header is ignored.
+		# {client_ip} below therefore cannot be spoofed by a visitor.
+		import /etc/caddy/conf.d/cloudflare-ips.conf
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+# --------------------------------------------------------------------------------------------
+# Shared pieces
+# --------------------------------------------------------------------------------------------
+
+# Access log as JSON on stdout. Query strings are removed from the logged URI (the password-reset link
+# /admin/reset-password?token=... must never be logged, architecture.md section 5 "Logging"), and the
+# CSRF token and idempotency key headers are dropped. Cookie and Authorization are redacted by Caddy.
+(access_log) {
+	log {
+		output stdout
+		format filter {
+			wrap json
+			request>uri regexp \?.* ""
+			request>headers>X-Csrf-Token delete
+			request>headers>Idempotency-Key delete
+		}
+	}
+}
+
+# Options shared by every backend reverse_proxy of the public sites.
+(backend_pool_options) {
+	health_uri /api/healthz
+	health_interval 5s
+	health_timeout 3s
+	health_status 200
+	# A restart of the only instance takes 20 to 30 seconds; retry connection failures for a short
+	# while instead of failing at once. (GET pages are covered by stale-if-error at the CDN.)
+	lb_try_duration 8s
+	lb_try_interval 250ms
+
+	header_up -X-Upstream
+	header_up X-Client-Ip {client_ip}
+	header_up X-Request-Id {http.request.uuid}
+	header_down X-Upstream backend
+}
+
+# Options for the internal listeners.
+(internal_backend_options) {
+	health_uri /api/healthz
+	health_interval 5s
+	health_timeout 3s
+	health_status 200
+	lb_try_duration 8s
+	lb_try_interval 250ms
+	# ssr sets its own X-Request-Id; keep it so one id runs from the edge to the datastore.
+	header_up -X-Upstream
+	header_up X-Client-Ip {client_ip}
+	# ssr's Java HttpClient opens with an HTTP/2 cleartext upgrade (Connection: Upgrade, HTTP2-Settings; Upgrade: h2c).
+	# Caddy would forward it and the backend's Jetty answers 400, so every ssr page would show "unavailable"
+	# (found on staging, 26 Oct 2026). Drop the upgrade headers: ssr then talks plain HTTP/1.1.
+	header_up -Upgrade
+	header_up -HTTP2-Settings
+	transport http {
+		dial_timeout 3s
+		response_header_timeout 15s
+	}
+}
+
+# Arguments: {args[0]} backend upstream, {args[1]} ssr upstream, {args[2]} HSTS max-age in seconds.
+(site) {
+	import access_log
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age={args[2]}"
+		X-Content-Type-Options nosniff
+		-Server
+		-X-Powered-By
+	}
+
+	# Large uploads: up to 20 pictures of 5 MB (api-contract.md) or the 1 MB product CSV. Everything
+	# else in the API is small JSON. Image resizing happens inside the request, so allow a long wait.
+	handle /api/admin/* {
+		request_body {
+			max_size 110MB
+		}
+		reverse_proxy {args[0]} {
+			import backend_pool_options
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 180s
+			}
+		}
+	}
+
+	handle /api/* {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy {args[0]} {
+			import backend_pool_options
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 30s
+			}
+		}
+	}
+
+	handle /media/* {
+		reverse_proxy {args[0]} {
+			import backend_pool_options
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 30s
+			}
+		}
+	}
+
+	handle {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy {args[1]} {
+			# Health check on a path that does not call the backend, so a backend restart does not
+			# take the ssr pool out of rotation: ssr then answers with its own 503 page (no-store).
+			health_uri /robots.txt
+			health_interval 5s
+			health_timeout 3s
+			health_status 200
+			lb_try_duration 8s
+			lb_try_interval 250ms
+
+			# Whatever the visitor sent under the names we control is replaced: header_up with a value SETS
+			# (overwrites), it does not append. (A "header_up -Name" before it would be applied after the set
+			# and delete our own value: tested.)
+			header_up -X-Upstream
+			header_up X-Client-Ip {client_ip}
+			header_up X-Request-Id {http.request.uuid}
+			header_down X-Upstream ssr
+
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 15s
+			}
+		}
+	}
+}
+
+# --------------------------------------------------------------------------------------------
+# Sites, one file per role this host has (HOST_ROLES in /srv/zandy/compose/.env). deploy.sh uploads
+# only the files for the host's roles into the "sites" directory, so a staging-only server has no
+# production site, no production listener and needs no PROD_HOST.
+#   sites/staging.caddy     {$STAGING_HOST} and the staging listener :8089
+#   sites/production.caddy  {$PROD_HOST} and the production listener :8088
+# --------------------------------------------------------------------------------------------
+import /etc/caddy/conf.d/sites/*.caddy
+
+# Container health check.
+http://:8087 {
+	bind 0.0.0.0
+	respond /ok 200
+}

@@ -1,0 +1,13 @@
+;; Approved by the owner on 26 October 2026 (replaces the 2026-10-01 draft).
+{:type "returns"
+ :version "2026-10-26"
+ :title "Returns and refunds"
+ :review-status :approved
+ :effective-from #inst "2026-10-26T00:00:00Z"
+ :summary []
+ :blocks [{:type "heading" :text "1. Checking your order"}
+          {:type "paragraph" :text "Your products are delivered in their original packaging. When your order arrives, check that the packaging is intact and that you received the products you ordered. You do not need to open the products. If the packaging is visibly damaged, tell the delivery person straight away and contact us by phone or WhatsApp."}
+          {:type "heading" :text "2. Cancelling before delivery"}
+          {:type "paragraph" :text "You can cancel your order at any time before it is delivered. Tell us by phone or WhatsApp. Nothing is charged, because you pay on delivery."}
+          {:type "heading" :text "3. No returns after delivery"}
+          {:type "paragraph" :text "Once your order has been delivered, products cannot be returned and the price is not refunded."}]}

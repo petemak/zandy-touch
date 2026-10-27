@@ -1,0 +1,24 @@
+# Allow-list: the ssr image build needs only these paths from the repository.
+*
+!package.json
+!package-lock.json
+!shadow-cljs.edn
+!admin-help.md
+!design-tokens.css
+!assets
+!styles
+!src/shared
+!src/frontend
+!test/shared
+!test/frontend
+!scripts/build
+!ssr/deps.edn
+!ssr/src
+!ssr/resources
+!deploy/docker/jvm-runtime.sh
+!deploy/docker/ssr-entrypoint.sh
+**/node_modules
+**/target
+**/.cpcache
+**/.shadow-cljs
+**/.DS_Store

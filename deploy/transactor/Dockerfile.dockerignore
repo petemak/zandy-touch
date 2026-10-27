@@ -1,0 +1,4 @@
+*
+!deploy/transactor/transactor.properties.template
+!deploy/transactor/logback.xml
+!deploy/transactor/entrypoint.sh

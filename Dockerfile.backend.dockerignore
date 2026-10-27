@@ -1,0 +1,9 @@
+# Allow-list: the backend image needs only these paths from the repository.
+*
+!deps.edn
+!src/backend
+!resources
+!deploy/docker/jvm-runtime.sh
+!deploy/docker/backend-entrypoint.sh
+**/.cpcache
+**/.DS_Store

@@ -1,0 +1,15 @@
+;; Approved by the owner on 26 October 2026 (replaces the 2026-10-01 draft).
+{:type "termsOfSale"
+ :version "2026-10-26"
+ :title "Terms of sale"
+ :review-status :approved
+ :effective-from #inst "2026-10-26T00:00:00Z"
+ :summary []
+ :blocks [{:type "heading" :text "1. Who we are"}
+          {:type "paragraph" :text "Zandy Touch is a beauty and wellness shop based in Kampala, Uganda."}
+          {:type "heading" :text "2. Products and prices"}
+          {:type "paragraph" :text "We describe our products as accurately as we can. Prices are in Ugandan shillings and may change; the price shown when you place your order applies to that order."}
+          {:type "heading" :text "3. Orders"}
+          {:type "paragraph" :text "An order is a request to buy. We confirm it with you by phone or WhatsApp. Products are subject to availability."}
+          {:type "heading" :text "4. Delivery and payment"}
+          {:type "paragraph" :text "Delivery fees are agreed with you for each order. You pay in cash or by mobile money on delivery."}]}

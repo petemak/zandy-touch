@@ -1,0 +1,15 @@
+;; Versioned migration. The owner reviewed and approved the four policy texts on 26 October 2026.
+;; Adds the approved 2026-10-26 versions as current and retires the 2026-10-01 drafts (kept for history,
+;; so earlier order acceptances still point at the version that was accepted).
+{:id :0011-approved-policies,
+ :description "Owner-approved policy texts (2026-10-26) replace the 2026-10-01 drafts",
+ :tx-data
+ [[:db/add [:policy/key "orderTerms/2026-10-01"] :policy/current? false]
+  [:db/add [:policy/key "termsOfSale/2026-10-01"] :policy/current? false]
+  [:db/add [:policy/key "privacy/2026-10-01"] :policy/current? false]
+  [:db/add [:policy/key "returns/2026-10-01"] :policy/current? false]],
+ :policy-files
+ ["policies/orderTerms/2026-10-26.edn"
+  "policies/termsOfSale/2026-10-26.edn"
+  "policies/privacy/2026-10-26.edn"
+  "policies/returns/2026-10-26.edn"]}

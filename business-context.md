@@ -128,6 +128,11 @@ Stock and orders
 
 Policies and data
 - Policy texts are reviewed by a human: the owner is consulted manually before any text is approved.
+- Returns and cancellation (owner, 26 October 2026): customers can cancel an order at any time before it is delivered.
+  Returns are not accepted once an order has been delivered (shop owner, 26 October 2026; this replaces an earlier
+  24-hour unopened-returns rule). Products are delivered in their original packaging; customers check that the packaging is intact and
+  that they received what they ordered, without opening the products. Damage in transit is settled between the shop and the
+  delivery agent (rare); the policy only asks the customer to report visibly damaged packaging to the delivery person. The four policy texts were reviewed and approved by the owner on 26 October 2026 (version 2026-10-26).
 - Customer personal data (contact details on orders, contact messages) is kept for 6 months, then removed.
 - Original uploaded photos are deleted after the resized versions are made.
 - Product pictures are not a feature of their own: a picture always belongs to a product. There is no separate photo

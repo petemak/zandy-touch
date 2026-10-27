@@ -81,7 +81,7 @@
      [:h1.page-title "Delivery and payment"]
      [:div.prose
       [:h2 "How delivery works"]
-      [:p "We deliver to major cities in Uganda. The delivery fee and timing are agreed with you for each order, and the fee is recorded before anything is sent. We never add a delivery fee without your agreement, and you can cancel before dispatch if you do not agree."]
+      [:p "We deliver to major cities in Uganda. The delivery fee and timing are agreed with you for each order, and the fee is recorded before anything is sent. We never add a delivery fee without your agreement, and you can cancel your order at any time before it is delivered."]
       [:p "Delivery to neighbouring countries is coming later."]
       [:h2 "How to pay"]
       [:p "You pay when your order arrives, in cash or with mobile money. Nothing is paid online."]

@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1.7
+# Zandy Touch backend (Pedestal + Datomic peer). Build from the repository root:
+#   docker build -f Dockerfile.backend -t zandy/backend:<release> .
+# One image serves production and staging; only the environment differs (architecture.md section 5).
+#
+# Production entry point: `java ... clojure.main -m zandy.platform.system` with ZANDY_PROFILE=prod.
+# It is never the dev alias (`clojure -M:run` bakes in -Dzandy.profile=dev: in-memory Datomic, log mailer,
+# seed on boot; architecture-review.md section 9).
+ARG JDK_IMAGE=eclipse-temurin:21-jdk-noble
+ARG JRE_IMAGE=eclipse-temurin:21-jre-noble
+
+# ---------------------------------------------------------------- build
+FROM ${JDK_IMAGE} AS build
+ARG CLOJURE_CLI_VERSION=1.12.4.1618
+# sha256 of linux-install.sh for that version, computed on 25 Oct 2026.
+ARG CLOJURE_CLI_INSTALL_SHA256=8a49ab11a639ce1d49e5459a7bfa8fcc74684ad3bc9acd181e3adc7a662918cf
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates git rlwrap \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL -o /tmp/linux-install.sh \
+      "https://github.com/clojure/brew-install/releases/download/${CLOJURE_CLI_VERSION}/linux-install.sh" \
+ && echo "${CLOJURE_CLI_INSTALL_SHA256}  /tmp/linux-install.sh" | sha256sum -c - \
+ && bash /tmp/linux-install.sh && rm /tmp/linux-install.sh
+WORKDIR /build
+# Dependencies first, so source edits do not re-download them.
+COPY deps.edn ./
+RUN clojure -P
+COPY src/backend ./src/backend
+COPY resources ./resources
+COPY --chmod=0755 deploy/docker/jvm-runtime.sh /usr/local/bin/jvm-runtime.sh
+# AOT-compile zandy.platform.system (it requires every namespace the aliases :migrate, :bootstrap-owner,
+# :seed and :send-test-mail use) and collect a self-contained classpath in /out.
+RUN jvm-runtime.sh /build /out zandy.platform.system
+
+# ---------------------------------------------------------------- runtime
+FROM ${JRE_IMAGE}
+# libvips-tools gives vipsthumbnail, vipsheader and vips (architecture D5). curl is for the health check.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libvips-tools curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --gid 10001 zandy \
+ && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin zandy \
+ && mkdir -p /data/media \
+ && chown zandy:zandy /data/media
+COPY --from=build /out /app
+COPY --chmod=0755 deploy/docker/backend-entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# Defaults only; compose.yaml sets JAVA_OPTS per service (D3: production -Xmx768m, staging -Xmx512m).
+ENV ZANDY_PROFILE=prod \
+    PORT=8080 \
+    MEDIA_DIR=/data/media \
+    JAVA_OPTS="-Xmx768m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError -Ddatomic.objectCacheMax=256m --enable-native-access=ALL-UNNAMED"
+USER zandy
+WORKDIR /app
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=3s --start-period=90s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${PORT}/api/healthz" >/dev/null || exit 1
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["serve"]

@@ -191,7 +191,7 @@
          [:li (str "We contact you on " (fmt/phone-display (get-in order [:customer :phone])) " to agree the delivery fee.")]
          [:li "We send out your order."]
          [:li "You pay on delivery, in cash or mobile money."]]
-        [:p "If you do not agree the fee, you can cancel before dispatch."]]
+        [:p "You can cancel your order at any time before it is delivered, for example if you do not agree the fee."]]
        (order/order-summary {:lines (:items order) :subtotal (:itemsSubtotal order) :deliveryFee (:deliveryFee order)
                              :total (:total order) :heading "Your order"})
        [:div.actions

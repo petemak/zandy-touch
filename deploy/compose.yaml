@@ -1,0 +1,252 @@
+# Zandy Touch: one VPS, Docker Compose. Copied to /srv/zandy/compose/ by scripts/ops/deploy.sh.
+#
+#   transactor                 Datomic Pro, dev storage, both databases (zandy, zandy-staging)
+#   backend, ssr               production set          (profile "production"; absent on a staging-only host)
+#   backend-staging, ssr-staging   staging set         (profile "staging")
+#   caddy                      TLS, path routing, internal listeners, client address headers
+#   datomic-tools              one-shot Datomic CLI for backup/restore (profile "tools", never started by up)
+#
+# Why Compose and not systemd units: the five long-running JVM/proxy processes need the same things
+# (private network, memory limits, restart, health checks, ordered start). Compose states all of that in
+# one file that can be read and checked, images carry their own libvips and JRE so the host stays bare,
+# and a rollback is changing one image tag. systemd is still used for the two timers (backup and
+# restore test), see deploy/systemd/.
+#
+# Required variables come from /srv/zandy/compose/.env (non-secret, see deploy/env.host.example).
+# Secrets come from /etc/zandy/*.env (root-only, never in the repository).
+#
+# Layouts: compose.yaml alone is the 8 GB single-host layout (production + staging, D3 sizes).
+# compose.small.yaml is merged on top for a 4 GB staging-only host (COMPOSE_FILE in .env), see its header.
+# Start only what the host has:  docker compose --profile staging up -d   (transactor, caddy, staging set)
+#
+# Memory (architecture.md D3, checked by scripts/ops/sum_xmx.clj):
+#   -Xmx: transactor 1024m, backend 768m, ssr 256m, backend-staging 512m, ssr-staging 192m.
+#   mem_limit is above the expected RSS in D3 so the kernel only kills a process that really leaks.
+name: zandy
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-hardening: &hardening
+  init: true
+  restart: unless-stopped
+  logging: *logging
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+networks:
+  zandy:
+    driver: bridge
+
+services:
+  # ------------------------------------------------------------------------------------------
+  transactor:
+    <<: *hardening
+    image: zandy/transactor:${TRANSACTOR_TAG:?set TRANSACTOR_TAG in .env}
+    command: ["transactor", "-Xmx1024m", "-Xms1024m"]
+    env_file: /etc/zandy/transactor.env
+    environment:
+      DATOMIC_ALT_HOST: transactor
+    networks: [zandy]
+    # No "ports:" on purpose: 4334/4335 are reachable only from containers on the zandy network.
+    expose: ["4334", "4335"]
+    volumes:
+      - /srv/zandy/datomic/data:/var/lib/datomic/data
+    tmpfs:
+      - /run/datomic:mode=0700,uid=10001,gid=10001
+      - /var/lib/datomic/log:uid=10001,gid=10001
+      - /tmp:uid=10001,gid=10001
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9999/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+
+  # ------------------------------------------------------------------------------------------
+  backend:
+    <<: *hardening
+    profiles: ["production"]
+    image: zandy/backend:${PROD_RELEASE:?set PROD_RELEASE in .env}
+    env_file:
+      - path: /etc/zandy/production.env
+        required: false   # a staging-only host has no production env file
+    environment:
+      ZANDY_PROFILE: prod
+      PORT: "8080"
+      MEDIA_DIR: /data/media
+      JAVA_OPTS: >-
+        -Xmx768m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError
+        -Ddatomic.objectCacheMax=256m --enable-native-access=ALL-UNNAMED
+    networks: [zandy]
+    expose: ["8080"]
+    volumes:
+      - /srv/zandy/media/production:/data/media
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,uid=10001,gid=10001
+    depends_on:
+      transactor:
+        condition: service_healthy
+    mem_limit: 1200m
+    memswap_limit: 1200m
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
+
+  ssr:
+    <<: *hardening
+    profiles: ["production"]
+    image: zandy/ssr:${PROD_RELEASE:?set PROD_RELEASE in .env}
+    env_file:
+      - path: /etc/zandy/ssr.production.env
+        required: false
+    environment:
+      PORT: "8081"
+      STATIC_DIR: /srv/static
+      JAVA_OPTS: "-Xmx256m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError"
+    networks: [zandy]
+    expose: ["8081"]
+    volumes:
+      - /srv/zandy/static/production:/srv/static:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,uid=10001,gid=10001
+    depends_on:
+      caddy:
+        condition: service_healthy
+    mem_limit: 640m
+    memswap_limit: 640m
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/healthz"]
+      interval: 15s
+      timeout: 4s
+      retries: 3
+      start_period: 90s
+
+  # ------------------------------------------------------------------------------------------
+  backend-staging:
+    <<: *hardening
+    profiles: ["staging"]
+    image: zandy/backend:${STAGING_RELEASE:?set STAGING_RELEASE in .env}
+    env_file: /etc/zandy/staging.env
+    environment:
+      ZANDY_PROFILE: prod
+      PORT: "8080"
+      MEDIA_DIR: /data/media
+      JAVA_OPTS: >-
+        -Xmx512m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError
+        -Ddatomic.objectCacheMax=128m --enable-native-access=ALL-UNNAMED
+    networks: [zandy]
+    expose: ["8080"]
+    volumes:
+      - /srv/zandy/media/staging:/data/media
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,uid=10001,gid=10001
+    depends_on:
+      transactor:
+        condition: service_healthy
+    mem_limit: 900m
+    memswap_limit: 900m
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 90s
+
+  ssr-staging:
+    <<: *hardening
+    profiles: ["staging"]
+    image: zandy/ssr:${STAGING_RELEASE:?set STAGING_RELEASE in .env}
+    env_file: /etc/zandy/ssr.staging.env
+    environment:
+      PORT: "8081"
+      STATIC_DIR: /srv/static
+      JAVA_OPTS: "-Xmx192m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m -XX:+ExitOnOutOfMemoryError"
+    networks: [zandy]
+    expose: ["8081"]
+    volumes:
+      - /srv/zandy/static/staging:/srv/static:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,uid=10001,gid=10001
+    depends_on:
+      caddy:
+        condition: service_healthy
+    mem_limit: 512m
+    memswap_limit: 512m
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/healthz"]
+      interval: 15s
+      timeout: 4s
+      retries: 3
+      start_period: 90s
+
+  # ------------------------------------------------------------------------------------------
+  caddy:
+    <<: *hardening
+    image: caddy:${CADDY_TAG:-2.11-alpine}
+    environment:
+      # Used only by the site files present on this host (HOST_ROLES); the other may stay unset.
+      PROD_HOST: ${PROD_HOST:-unused.invalid}
+      STAGING_HOST: ${STAGING_HOST:-unused.invalid}
+      STAGING_ALT_HOST: ${STAGING_ALT_HOST:-alt.invalid}
+    networks: [zandy]
+    # Only IPv4 is published on purpose: Docker's IPv6 userland proxy hides the visitor address, and the
+    # DNS zone gets no AAAA record. Ports 8087-8089 are internal listeners and are NOT published.
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+      - "0.0.0.0:443:443/udp"
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - /srv/zandy/compose/Caddyfile:/etc/caddy/Caddyfile:ro
+      # cloudflare-ips.conf and sites/*.caddy (only the roles of this host)
+      - /srv/zandy/compose/caddy:/etc/caddy/conf.d:ro
+      - /srv/zandy/caddy/data:/data
+      - /srv/zandy/caddy/config:/config
+    mem_limit: 192m
+    memswap_limit: 192m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8087/ok"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  # ------------------------------------------------------------------------------------------
+  # One-shot Datomic command line (backup-db, restore-db, list-backups). Not started by `up`:
+  #   docker compose --profile tools run --rm datomic-tools datomic -Xms64m -Xmx384m backup-db <from> <to>
+  datomic-tools:
+    profiles: ["tools"]
+    image: zandy/transactor:${TRANSACTOR_TAG:?set TRANSACTOR_TAG in .env}
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    networks: [zandy]
+    volumes:
+      - /srv/zandy/datomic/backup:/var/lib/datomic/backup
+    tmpfs:
+      - /tmp:uid=10001,gid=10001
+    mem_limit: 768m
+    memswap_limit: 768m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

@@ -1,0 +1,26 @@
+;; Approved by the owner on 26 October 2026 (replaces the 2026-10-01 draft).
+{:type "orderTerms"
+ :version "2026-10-26"
+ :title "Order terms"
+ :review-status :approved
+ :effective-from #inst "2026-10-26T00:00:00Z"
+ :summary ["Prices shown are product prices in UGX and exclude delivery."
+           "The delivery fee is agreed with you before your order is dispatched."
+           "You can cancel your order at any time before it is delivered."
+           "You pay in cash or by mobile money when your order is delivered."
+           "Please be reachable on the phone number you give us."
+           "Products cannot be returned once they have been delivered."]
+ :blocks [{:type "heading" :text "1. Prices and delivery"}
+          {:type "paragraph" :text "Prices shown on the website are the product prices in Ugandan shillings (UGX). They do not include delivery. The delivery fee is agreed with you by phone or WhatsApp after you place your order, and it is recorded before your order is dispatched."}
+          {:type "heading" :text "2. Cancelling your order"}
+          {:type "paragraph" :text "You may cancel your order at any time before it is delivered, for example if you do not agree the delivery fee. Tell us by phone or WhatsApp. Once your order has been delivered it can no longer be cancelled."}
+          {:type "heading" :text "3. Payment"}
+          {:type "paragraph" :text "You pay when your order is delivered, in cash or by mobile money. Nothing is charged online."}
+          {:type "heading" :text "4. Being reachable"}
+          {:type "paragraph" :text "We contact you on the phone number you give when ordering to agree the delivery fee and arrange delivery. Please keep that phone available. We may be unable to deliver if we cannot reach you."}
+          {:type "heading" :text "5. Returns"}
+          {:type "paragraph" :text "Your products are delivered in their original packaging. When they arrive, check that the packaging is intact and that you received what you ordered; you do not need to open them. If the packaging is visibly damaged, tell the delivery person straight away. Once your order has been delivered, products cannot be returned and the price is not refunded. The returns and refunds policy forms part of these terms."}
+          {:type "heading" :text "6. Your personal data"}
+          {:type "list" :items ["We use your name, phone number, address and optional email to process and deliver your order."
+                                "We keep this information for 6 months after your order is closed, then remove it."
+                                "We do not sell your personal data."]}]}

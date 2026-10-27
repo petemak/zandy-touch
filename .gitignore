@@ -58,4 +58,7 @@ public/js/
 .netlify
 
 # --- Emacs files ---
-\#*#
+\#*#.clj-kondo/.cache/
+.clj-kondo/imports/
+ssr/.clj-kondo/.cache/
+.#*

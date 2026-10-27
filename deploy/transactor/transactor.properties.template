@@ -1,0 +1,39 @@
+# Datomic Pro transactor properties TEMPLATE (dev storage). Version pinned in deploy/transactor/Dockerfile.
+# Rendered at container start by deploy/transactor/entrypoint.sh with envsubst, which fills only the
+# variables named in ${...} below from the container environment (file /etc/zandy/transactor.env on the
+# server). The rendered file lives in a root-only tmpfs directory inside the container, never in the repo.
+#
+# Network: the transactor binds every interface of its container, but compose.yaml publishes no port for
+# it, so only containers on the private "zandy" network can reach 4334/4335. Peers (the backends)
+# connect to the name in alt-host (the compose service name).
+protocol=dev
+host=0.0.0.0
+alt-host=${DATOMIC_ALT_HOST}
+port=4334
+h2-port=4335
+
+# Peers are on another host (container), so storage must allow remote access.
+# Two passwords are required. Both are SECRETS (transactor.env). The backends' DATOMIC_URI carries
+# ?password=<DATOMIC_STORAGE_PASSWORD>.
+storage-access=remote
+storage-admin-password=${DATOMIC_STORAGE_ADMIN_PASSWORD}
+storage-datomic-password=${DATOMIC_STORAGE_PASSWORD}
+
+# Persistent volume (host: /srv/zandy/datomic/data). All databases (zandy, zandy-staging) live here.
+data-dir=/var/lib/datomic/data
+log-dir=/var/lib/datomic/log
+
+# architecture.md D3: -Xmx1024m with 32m / 256m / 128m (Datomic's own guidance for a 1 GB heap); those are the
+# defaults set in entrypoint.sh. compose.small.yaml sets smaller values for a 640m heap on a 4 GB host.
+memory-index-threshold=${DATOMIC_MEMORY_INDEX_THRESHOLD}
+memory-index-max=${DATOMIC_MEMORY_INDEX_MAX}
+object-cache-max=${DATOMIC_OBJECT_CACHE_MAX}
+
+# Peer-to-transactor traffic stays on the private Docker network; keep the default encryption on.
+encrypt-channel=true
+
+# Health endpoint for the container health check: GET http://127.0.0.1:9999/health returns 200 when the
+# transactor is the active, healthy one. Bound to loopback inside the container only.
+ping-host=127.0.0.1
+ping-port=9999
+ping-endpoint=/health

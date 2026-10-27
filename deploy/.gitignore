@@ -1,0 +1,17 @@
+# Real environment files and secrets never go into git. Only the *.example templates do.
+env.production
+env.staging
+env.ssr.production
+env.ssr.staging
+env.transactor
+env.host
+env.backup
+*.env
+.env
+secrets/
+*.pem
+*.key
+# State written by scripts/ops (previous manifests, release records)
+.state/
+# LibreOffice lock files
+.~lock.*

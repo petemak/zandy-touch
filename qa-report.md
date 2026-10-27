@@ -2,7 +2,7 @@
 
 Commit 1a3b47d plus the architect review edits (api-contract.md hash 589983eb…). Run on 25–26 October 2026 against a live dev backend (in-memory Datomic, seeded), the frontend server and the dev proxy, on ports 28080–28090. All QA servers were stopped afterwards. No code was edited. Saved by the lead from the QA agent's report; the content is QA's.
 
-**Lead's note (not part of QA's findings): not yet signed off for staging.** QA found every contract endpoint, scope category, journey, non-negotiable rule and local fitness check passing. The lead recommends fixing open items 1, 2 and 4 below before staging; items 3, 5, 6 and 7 are owner decisions or low priority. The owner decides on sign-off.
+**Owner sign-off for staging: given in chat on 26 October 2026 ("QA has signed off"), after the re-check below.** Earlier lead's note, kept for history: not yet signed off for staging. QA found every contract endpoint, scope category, journey, non-negotiable rule and local fitness check passing. The lead recommends fixing open items 1, 2 and 4 below before staging; items 3, 5, 6 and 7 are owner decisions or low priority. The owner decides on sign-off.
 
 ## Open items, in order of importance
 

@@ -1,0 +1,12 @@
+# Production site and its internal listener. Present on the server only when HOST_ROLES contains production.
+{$PROD_HOST} {
+	import site backend:8080 ssr:8081 31536000
+}
+
+# ssr (production) -> backend pool. API_BASE_URL=http://caddy:8088
+http://:8088 {
+	bind 0.0.0.0
+	reverse_proxy backend:8080 {
+		import internal_backend_options
+	}
+}

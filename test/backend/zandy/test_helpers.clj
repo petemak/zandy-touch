@@ -140,7 +140,7 @@
            :payment-method "mobileMoney"
            :note "Please call after 5pm"
            :items (mapv (fn [[p q]] {:product-id (str (:id p)) :quantity q :expected-unit-price (:price p)}) items)
-           :agreement {:type "orderTerms" :version "2026-10-01"}}
+           :agreement {:type "orderTerms" :version "2026-10-26"}}
           overrides)))
 
 (defn place-order!

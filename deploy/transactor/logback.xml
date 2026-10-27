@@ -1,0 +1,27 @@
+<configuration>
+  <!-- Console logging so `docker compose logs transactor` works and the Docker log driver rotates it. -->
+  <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
+    <resetJUL>true</resetJUL>
+  </contextListener>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+  <logger name="datomic.cast2slf4j" level="DEBUG"/>
+  <logger name="org.apache.activemq.audit" level="WARN"/>
+  <logger name="httpclient" level="INFO"/>
+  <logger name="org.apache.commons.httpclient" level="INFO"/>
+  <logger name="org.apache.http" level="INFO"/>
+  <logger name="org.jets3t" level="INFO"/>
+  <logger name="software.amazon.awssdk" level="INFO"/>
+  <logger name="software.amazon.awssdk.request" level="WARN"/>
+  <logger name="software.amazon.awssdk.metrics.LoggingMetricPublisher" level="WARN"/>
+  <logger name="sun.rmi" level="INFO"/>
+  <logger name="datomic.spy.memcached" level="INFO"/>
+  <logger name="org.eclipse.jetty" level="INFO"/>
+  <logger name="org.hornetq.core.client.impl" level="INFO"/>
+  <root level="info">
+    <appender-ref ref="STDOUT"/>
+  </root>
+</configuration>

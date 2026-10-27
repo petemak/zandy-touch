@@ -1,0 +1,16 @@
+# Staging site and its internal listener. Present on the server only when HOST_ROLES contains staging.
+# STAGING_ALT_HOST: optional second name (the sslip.io name while the real domain is being switched).
+{$STAGING_HOST}, {$STAGING_ALT_HOST:alt.invalid} {
+	import site backend-staging:8080 ssr-staging:8081 86400
+	# Belt and braces: ssr already sends X-Robots-Tag and robots.txt "Disallow: /" when
+	# SITE_INDEXABLE=false; this covers /api and /media answers as well.
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+}
+
+# ssr (staging) -> staging backend pool. API_BASE_URL=http://caddy:8089
+http://:8089 {
+	bind 0.0.0.0
+	reverse_proxy backend-staging:8080 {
+		import internal_backend_options
+	}
+}

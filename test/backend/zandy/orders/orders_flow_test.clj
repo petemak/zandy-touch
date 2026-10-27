@@ -68,7 +68,7 @@
     (testing "agreement version"
       (let [r (t/place-order! app [[p 1]] (str (random-uuid)) {:agreement {:type "orderTerms" :version "1999"}})]
         (is (= "agreementVersionOutdated" (t/error-code r)))
-        (is (= "2026-10-01" (get-in r [:body :error :details 0 :message])))))
+        (is (= "2026-10-26" (get-in r [:body :error :details 0 :message])))))
     (testing "cartOutdated reports every failing line and takes nothing"
       (let [q (t/seed-product! ctx {:name "Other" :stock 0 :sku "OTH-1"})
             r (t/place-order! app [[p 5] [q 1]] (str (random-uuid)) {})
