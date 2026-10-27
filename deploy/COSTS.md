@@ -91,7 +91,7 @@ The Cloudflare Registrar prices above (10.46 and 11.17 USD, and the 31 October d
 | Gmail SMTP (shop owner's account) | 0 | 0 | | |
 | sslip.io hostname before DNS | 0 | 0 | | |
 
-TOTAL_MONTHLY_USD: 11.29   (the planned single-host VPS-2 layout; superseded for now by the staging-only phase below)
+TOTAL_MONTHLY_USD: 10.24   (actual layout since go-live on 27 Oct 2026: staging VPS-1 + production VPS-1 + domain; the original single-host VPS-2 plan was 11.29)
 
 - With Swiss VAT 8.1% on the server: 10.37 + 0.92 = **11.29 USD per month** (about 11.30). Without VAT: 10.51.
 - Worst case if VAT were 20%: 11.51 + 0.92 = 12.43. Still under the 15 USD ceiling, with at least 2.7 USD to spare.
@@ -117,3 +117,17 @@ TOTAL_GO_LIVE_C_USD: 10.24
 OVER_CEILING_B_USD: 15.95
 
 Reading: the ceiling holds in A, B2, C and D. B is the only combination over 15 USD: keep two OVH servers only if one of them is VPS-1. Check D-4 reads every `TOTAL_...USD` line and fails if any is above 15; OVER_CEILING lines are printed as warnings.
+
+
+## UPDATE 27 October 2026: production is live on a second VPS-1 (scenario C)
+Production runs on a second OVH VPS-1 (57.131.146.87); staging stays on the first (141.95.0.8). Prices as for the staging VPS-1 order (3.81 EUR per month excluding tax, monthly billing, no options); the production order's own invoice was not seen by deployment-engineer, so confirm it on the first invoice. Not re-searched today: the owner already ordered both servers.
+| Item | Per month (USD) | Billing, VAT, payment |
+|---|---|---|
+| OVH VPS-1 (production) 3.81 EUR ex tax, 1 EUR = 1.13 USD, Swiss VAT 8.1% | 4.66 | Monthly, Swiss card |
+| OVH VPS-1 (staging) | 4.66 | Monthly, Swiss card |
+| Domain zandytouch.com, Porkbun, 11.08 USD per year / 12 | 0.92 | Yearly |
+| Cloudflare Free (DNS, proxy, SSL, 2 cache rules, redirect rule) | 0 | none |
+| Cloudflare R2 backups (under the 10 GB free tier) | 0 | payment method on file |
+| Gmail SMTP (shop owner's account) | 0 | none |
+TOTAL_GO_LIVE_ACTUAL_USD: 10.24
+Ceiling 15 USD: 4.76 USD to spare. If staging is cancelled later the total falls to 5.58.

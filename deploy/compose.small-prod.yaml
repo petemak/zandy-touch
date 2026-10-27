@@ -1,0 +1,39 @@
+# Overrides for a 4 GB PRODUCTION-only host (OVH VPS-1: 2 vCore, 3.8 GB RAM, 38 GB disk). Merged over compose.yaml by
+#   COMPOSE_FILE=compose.yaml:compose.small-prod.yaml     (set in /srv/zandy/compose/.env by server-setup.sh)
+# Start with:  docker compose --profile production up -d   -> transactor, caddy, backend, ssr. No staging, no mail sink.
+# Written 27 Oct 2026, because the VPS-2 (8 GB) is out of stock; the sizing rule of RUNBOOK "What to measure on staging"
+# was met on the staging host (same hardware class), see DECISIONS.md "Production sizing".
+#
+#   service     -Xmx   mem_limit   why
+#   transactor  512m   1152m       the small-layout transactor (D3 adjustment PE7), measured on the real VPS-1: peak 735 MiB
+#   backend     768m   1000m       D3 PRODUCTION heap (staging used 512m). Staging peak 514 MiB at 512m, so about 770 MiB at 768m.
+#                                  Limit = heap + 192m metaspace + 40m native; libvips jobs run inside the container.
+#   ssr         256m   512m        D3 production heap (staging 192m, peak 172 MiB)
+#   caddy       -      192m
+#   heaps total 1536 MB; limits total 2856 MB (host 3814 MB); expected peak sum about 1.75 GB (staging 1.43 GB + 0.32 GB
+#   for the two larger heaps), so about 1.3 GB stays available at the heaviest burst and a 2 GB swap file is the last net.
+# Rule that this must keep meeting (RUNBOOK): peak total under 2.6 GB, more than 1.2 GB available, no OOM kill.
+# If an idle check or a burst shows otherwise, go back to the staging heaps (backend 512m / limit 900m, ssr 192m).
+services:
+  transactor:
+    # See compose.small.yaml for the reasons (health endpoint thread pool on 2 vCores; small memory index and object cache).
+    command: ["transactor", "-Xmx512m", "-Xms512m", "-XX:ActiveProcessorCount=8"]
+    environment:
+      DATOMIC_ALT_HOST: transactor
+      DATOMIC_MEMORY_INDEX_THRESHOLD: 16m
+      DATOMIC_MEMORY_INDEX_MAX: 128m
+      DATOMIC_OBJECT_CACHE_MAX: 64m
+    mem_limit: 1152m
+    memswap_limit: 1152m
+
+  backend:
+    mem_limit: 1000m
+    memswap_limit: 1000m
+
+  ssr:
+    mem_limit: 512m
+    memswap_limit: 512m
+
+  caddy:
+    mem_limit: 192m
+    memswap_limit: 192m

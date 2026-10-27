@@ -2,6 +2,7 @@
 ;; Acceptance check D-2: sums every -Xmx in deploy/compose.yaml and compares with architecture.md D3.
 ;;   bb scripts/ops/sum_xmx.clj [--total-ram-mb 8192]
 ;;   bb scripts/ops/sum_xmx.clj --layout small      4 GB staging-only host (compose.yaml + compose.small.yaml)
+;;   bb scripts/ops/sum_xmx.clj --layout small-prod 4 GB production-only host (compose.yaml + compose.small-prod.yaml)
 ;; Also lists the -Xmx defaults found in the Dockerfiles and fails when a service in compose.yaml has
 ;; no -Xmx, or when a Dockerfile default differs from the production value in D3.
 (require '[babashka.fs :as fs]
@@ -13,14 +14,19 @@
 ;; architecture.md D3, MB. Any measured change must be recorded here AND in deploy/DECISIONS.md.
 (def opts (into {} (map vec (partition 2 *command-line-args*))))
 (def small? (= "small" (get opts "--layout")))
-(def d3 (if small?
+(def smallprod? (= "small-prod" (get opts "--layout")))
+(def small-any? (or small? smallprod?))
+(def d3 (cond
+          ;; 4 GB production-only host: D3 production heaps for backend and ssr, the small-layout transactor (512m).
+          smallprod? {:transactor 512 :backend 768 :ssr 256}
+          :else (if small?
           ;; 4 GB staging-only host: the staging values of D3; the transactor is sized below D3 (512m, see
           ;; compose.small.yaml and DECISIONS.md) and must be confirmed by measurement on the real host.
           {:transactor 512 :backend-staging 512 :ssr-staging 192}
-          {:transactor 1024 :backend 768 :ssr 256 :backend-staging 512 :ssr-staging 192}))
-(def active (if small? #{:transactor :backend-staging :ssr-staging :caddy} (set (keys (:services (yaml/parse-string (slurp (str root "/deploy/compose.yaml"))))))))
-(def ram-mb (parse-long (get opts "--total-ram-mb" (if small? "4096" "8192"))))
-(def reserve-mb (if small? 1200 1500))
+          {:transactor 1024 :backend 768 :ssr 256 :backend-staging 512 :ssr-staging 192})))
+(def active (if small-any? (if smallprod? #{:transactor :backend :ssr :caddy} #{:transactor :backend-staging :ssr-staging :caddy}) (set (keys (:services (yaml/parse-string (slurp (str root "/deploy/compose.yaml"))))))))
+(def ram-mb (parse-long (get opts "--total-ram-mb" (if small-any? "4096" "8192"))))
+(def reserve-mb (if small-any? 1200 1500))
 
 (defn deep-merge [a b]
   (cond (and (map? a) (map? b)) (merge-with deep-merge a b)
@@ -33,9 +39,10 @@
 
 (def compose
   (let [base (yaml/parse-string (slurp (str root "/deploy/compose.yaml")))]
-    (if small?
-      (deep-merge base (yaml/parse-string (slurp (str root "/deploy/compose.small.yaml"))))
-      base)))
+    (cond
+      small? (deep-merge base (yaml/parse-string (slurp (str root "/deploy/compose.small.yaml"))))
+      smallprod? (deep-merge base (yaml/parse-string (slurp (str root "/deploy/compose.small-prod.yaml"))))
+      :else base)))
 
 (def found
   (into {}
@@ -62,7 +69,7 @@
                [svc (let [[_ n u] (re-find #"(\d+)([mg])" (:mem_limit cfg))] (* (parse-long n) (if (= u "g") 1024 1)))])
       limit-total (reduce + (map second (remove #(= :datomic-tools (first %)) limits)))]
   (println (format "  sum of heaps          %d MB" heap-total))
-  (println (format "  sum of mem_limit      %d MB (%s)" limit-total (if small? "staging-only host: transactor, backend-staging, ssr-staging, caddy" "all long-running containers, both environments")))
+  (println (format "  sum of mem_limit      %d MB (%s)" limit-total (cond small? "staging-only host: transactor, backend-staging, ssr-staging, caddy" smallprod? "production-only host: transactor, backend, ssr, caddy" :else "all long-running containers, both environments")))
   (println (format "  host RAM              %d MB; leave >= %d MB for OS, page cache and one-shot tasks" ram-mb reserve-mb))
   (when (> limit-total (- ram-mb reserve-mb))
     (problem! "sum of mem_limit " limit-total " MB leaves less than " reserve-mb " MB on a " ram-mb " MB host"))
@@ -78,7 +85,7 @@
   (printf "  %-32s -Xmx%s%n" f (or mb "none"))
   (when (and (not small?) (= f "Dockerfile.backend") (not= mb (:backend d3))) (problem! f " default differs from D3"))
   (when (and (not small?) (= f "Dockerfile.ssr") (not= mb (:ssr d3))) (problem! f " default differs from D3"))
-  (when (and (not small?) (= f "deploy/transactor/Dockerfile") (not= mb (:transactor d3))) (problem! f " default differs from D3")))
+  (when (and (not small-any?) (= f "deploy/transactor/Dockerfile") (not= mb (:transactor d3))) (problem! f " default differs from D3")))
 
 (if (seq @problems)
   (do (println "D-2 FAIL") (doseq [p @problems] (println " -" p)) (System/exit 1))

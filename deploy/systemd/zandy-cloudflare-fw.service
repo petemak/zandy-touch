@@ -1,0 +1,17 @@
+[Unit]
+Description=Zandy Touch origin firewall: ports 80 and 443 only from Cloudflare's ranges (DOCKER-USER)
+Documentation=file:///srv/zandy/bin/cloudflare-firewall.sh
+# Before Docker, so the containers never listen for a moment without the filter.
+After=local-fs.target
+Before=docker.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/srv/zandy/bin/cloudflare-firewall.sh apply
+ExecReload=/srv/zandy/bin/cloudflare-firewall.sh apply
+ExecStop=/srv/zandy/bin/cloudflare-firewall.sh remove
+
+[Install]
+WantedBy=multi-user.target

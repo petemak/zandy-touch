@@ -9,6 +9,8 @@
 #   --build-mode remote  build the images on the server (only if this machine has no Docker; the build
 #                      needs about 2 GB and can squeeze the running containers, so stage it carefully)
 #   --skip-migrate     do not run migrations (never for a release with a new migration)
+#   SKIP_PUBLIC_CHECKS=yes (environment) skip the final routing and retention checks against the public URL, for a first
+#                      production deploy before DNS points at the server
 #   --stage-only       first deploy while human secrets are still missing: build, upload images, upload config, start
 #                      the transactor and the proxy (certificate), then stop. Touches no database, no instance.
 #
@@ -17,8 +19,8 @@
 #   OWNER_APPROVED_STAGING=yes production only: the owner said, in their own words, that staging looks right
 #   a clean git working tree (the release name is the commit)
 #
-# A host runs the roles in HOST_ROLES of its /srv/zandy/compose/.env (a 4 GB VPS-1 is staging only; deploying
-# production to it is refused). Production then gets its own server at go-live.
+# A host runs the roles in HOST_ROLES of its /srv/zandy/compose/.env (a 4 GB VPS-1 is one role only: staging, or production
+# with compose.small-prod.yaml). A release already built on this machine is shipped as it is, never rebuilt.
 #
 # Order (architecture.md 3.3 and D10): build -> ship images and static files -> add static files
 # (earlier files stay 14 days) -> transactor and proxy up -> migrate -> bootstrap owner (idempotent) ->
@@ -73,7 +75,7 @@ echo "== deploy $release to $envname on $TARGET"
 
 # ---- server preflight ----------------------------------------------------------------------------
 rsh "test -d $proj && command -v docker >/dev/null" || die "server is not set up: run scripts/ops/server-setup.sh first (RUNBOOK step 'Prepare the server')"
-(cd "$OPS_DIR" && rsync_to check-env.sh lib.sh set-secret.sh show-mail.sh backup.sh restore-test.sh two-instance-smoke.sh burst-test.sh count_db.clj smtp_sink.clj json.clj "$TARGET:$ZANDY_HOME/bin/")
+(cd "$OPS_DIR" && rsync_to check-env.sh lib.sh set-secret.sh secret-lengths.sh cloudflare-firewall.sh show-mail.sh backup.sh restore-test.sh two-instance-smoke.sh burst-test.sh count_db.clj smtp_sink.clj json.clj "$TARGET:$ZANDY_HOME/bin/")
 [ "$stage_only" = 1 ] || rsh "$ZANDY_HOME/bin/check-env.sh $envname" || die "server environment files are incomplete (see above)"
 
 roles=$(env_get HOST_ROLES)
@@ -90,8 +92,26 @@ have_static=$(rsh "test -s $ZANDY_HOME/releases/$release/static/asset-manifest.e
 tx_tag=$(sed -n 's/^TRANSACTOR_TAG=//p' "$REPO_ROOT/deploy/env.host.example")
 have_tx=$(rsh "docker image inspect zandy/transactor:$tx_tag >/dev/null 2>&1 && echo yes || echo no")
 
+# A release that was already built on this machine (for staging) is shipped as it is, without rebuilding: production
+# then runs the very same image bytes the owner approved on staging. Needs the images in the local Docker and
+# deploy/.state/static-<release>/asset-manifest.edn (written by the build).
+local_ok=no
+if [ "$build_mode" = local ] && command -v docker >/dev/null 2>&1 \
+   && docker image inspect "zandy/backend:$release" "zandy/ssr:$release" >/dev/null 2>&1 \
+   && [ -s "$REPO_ROOT/deploy/.state/static-$release/asset-manifest.edn" ]; then local_ok=yes; fi
+
 if [ "$have_images" = yes ] && [ "$have_static" = yes ]; then
   echo "== release $release is already on the server: skipping build and upload"
+elif [ "$local_ok" = yes ]; then
+  echo "== release $release was built on this machine: shipping those images and static files (no rebuild)"
+  imgs=("zandy/backend:$release" "zandy/ssr:$release")
+  if [ "$have_tx" = no ]; then
+    docker image inspect "zandy/transactor:$tx_tag" >/dev/null 2>&1 || docker build -f "$REPO_ROOT/deploy/transactor/Dockerfile" -t "zandy/transactor:$tx_tag" "$REPO_ROOT"
+    imgs+=("zandy/transactor:$tx_tag")
+  fi
+  docker save "${imgs[@]}" | gzip | rsh "gunzip | docker load"
+  rsh "mkdir -p $ZANDY_HOME/releases/$release"
+  rsync_to --delete "$REPO_ROOT/deploy/.state/static-$release/" "$TARGET:$ZANDY_HOME/releases/$release/static/"
 else
   [ "$dirty_release" = 1 ] || [ "$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD)" = "$release" ] || die "to build, check out commit $release first"
   "$OPS_DIR/check-versions.sh"
@@ -129,7 +149,7 @@ fi
 
 # ---- config files --------------------------------------------------------------------------------
 echo "== uploading compose and proxy configuration"
-rsync_to "$REPO_ROOT/deploy/compose.yaml" "$REPO_ROOT/deploy/compose.small.yaml" "$REPO_ROOT/deploy/Caddyfile" "$TARGET:$proj/"
+rsync_to "$REPO_ROOT/deploy/compose.yaml" "$REPO_ROOT/deploy/compose.small.yaml" "$REPO_ROOT/deploy/compose.small-prod.yaml" "$REPO_ROOT/deploy/Caddyfile" "$TARGET:$proj/"
 rsync_to "$REPO_ROOT/deploy/caddy/cloudflare-ips.conf" "$TARGET:$proj/caddy/"
 rsh "mkdir -p $proj/mailsink" && rsync_to "$REPO_ROOT/deploy/mailsink/sink.py" "$TARGET:$proj/mailsink/"
 # Only the Caddy site files of this host's roles (a staging-only host gets no production site).
@@ -199,6 +219,10 @@ done"
 # ---- checks --------------------------------------------------------------------------------------
 host=$(rsh "sed -n 's/^$([ "$envname" = production ] && echo PROD || echo STAGING)_HOST=//p' $proj/.env")
 url="https://$host"
+if [ "${SKIP_PUBLIC_CHECKS:-}" = yes ]; then
+  echo "== deployed $release to $envname; public checks skipped (SKIP_PUBLIC_CHECKS=yes: DNS or the certificate are not ready yet). Run check-routing.sh $url when they are."
+  exit 0
+fi
 echo "== checks against $url"
 sleep 5
 "$OPS_DIR/check-routing.sh" "$url" || die "routing check failed"

@@ -2,6 +2,9 @@
 # One-time preparation of a fresh Ubuntu 24.04 or 26.04 VPS. Run ON THE SERVER as the sudo user:
 #   sudo bash server-setup.sh
 # (copy it up with: scp scripts/ops/{server-setup.sh,set-secret.sh,check-env.sh,lib.sh} deploy/env.*.example <user>@<ip>:)
+# Hosts: 8 GB = staging and production; 4 GB = ONE role (staging, or production with ZANDY_ALLOW_SMALL_PRODUCTION=yes and
+# compose.small-prod.yaml). ZANDY_HARDEN_SSH=yes also writes the key-only sshd drop-in: use it only after you have
+# confirmed key login in a second session.
 # Does: Docker Engine and rclone from their official sources, firewall (22, 80, 443), unattended security
 # updates, directory layout, env files from the templates with MACHINE-MADE secrets only
 # (SESSION_HMAC_SECRET, Datomic passwords). It never asks for or prints the human secrets
@@ -26,7 +29,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 echo "== packages"
 apt-get update -y
-apt-get install -y ca-certificates curl gnupg ufw rsync unattended-upgrades openssl unzip
+apt-get install -y ca-certificates curl gnupg ufw rsync unattended-upgrades openssl unzip ipset
 if ! command -v docker >/dev/null; then
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -47,6 +50,13 @@ if [ "$mem_mb" -lt 6000 ] && ! swapon --show | grep -q .; then
   fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile
   grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
   echo 'vm.swappiness=10' > /etc/sysctl.d/99-zandy.conf && sysctl -q -p /etc/sysctl.d/99-zandy.conf
+fi
+
+if [ "${ZANDY_HARDEN_SSH:-}" = yes ]; then
+  echo "== ssh: key login only"
+  printf '%s\n' "# Zandy: key login only (written by server-setup.sh). First match wins, so this file sorts before cloud-init." \
+    "PasswordAuthentication no" "KbdInteractiveAuthentication no" "PermitRootLogin no" > /etc/ssh/sshd_config.d/00-zandy-hardening.conf
+  sshd -t && systemctl reload ssh
 fi
 
 echo "== firewall (22, 80, 443 only; the transactor and the internal listeners are never published)"
@@ -75,7 +85,7 @@ mkd 10001 10001 755 /srv/zandy/media
 for r in $ZANDY_ROLES; do mkd 10001 10001 755 /srv/zandy/media/$r; done
 mkd root root 755 /srv/zandy/caddy /srv/zandy/caddy/data /srv/zandy/caddy/config
 mkd "$deploy_user" zandyops 750 /srv/zandy/backups
-for f in set-secret.sh show-mail.sh check-env.sh lib.sh backup.sh restore-test.sh two-instance-smoke.sh burst-test.sh count_db.clj smtp_sink.clj json.clj; do
+for f in set-secret.sh secret-lengths.sh cloudflare-firewall.sh show-mail.sh check-env.sh lib.sh backup.sh restore-test.sh two-instance-smoke.sh burst-test.sh count_db.clj smtp_sink.clj json.clj; do
   [ -f "$here/$f" ] && install -m 755 "$here/$f" /srv/zandy/bin/$f
 done
 chown -R "$deploy_user":"$deploy_user" /srv/zandy/bin
@@ -113,6 +123,8 @@ if [ ! -f /srv/zandy/compose/.env ]; then
   case " $ZANDY_ROLES " in *" production "*) ;; *) sed -i 's#^PROD_HOST=.*#PROD_HOST=unused.invalid#' /srv/zandy/compose/.env ;; esac
   case " $ZANDY_ROLES " in *" staging "*) ;; *) sed -i 's#^STAGING_HOST=.*#STAGING_HOST=unused.invalid#' /srv/zandy/compose/.env ;; esac
   if [ "$has_prod" = 0 ]; then sed -i 's#^COMPOSE_FILE=.*#COMPOSE_FILE=compose.yaml:compose.small.yaml#' /srv/zandy/compose/.env; fi
+  # 4 GB production-only host: the small production layout (backend and ssr at the D3 production heaps).
+  if [ "$has_prod" = 1 ] && [ "$mem_mb" -lt 6000 ] && [ "$ZANDY_ROLES" = production ]; then sed -i 's#^COMPOSE_FILE=.*#COMPOSE_FILE=compose.yaml:compose.small-prod.yaml#' /srv/zandy/compose/.env; fi
 fi
 
 echo "== done. Log out and in again (group membership), then fill the rest. Still to write by hand:"

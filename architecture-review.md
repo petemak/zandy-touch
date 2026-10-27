@@ -278,3 +278,5 @@ qa must run what I could not: the whole of `clojure -M:test`, `cd ssr && clojure
 ## 14. Amendments merged into architecture.md (27 October 2026)
 
 The approved amendments DA1 to DA10 (section 11, approved in 11a), the nine code-versus-design points of CODE-GUIDE.md section 8 (items 6 to 14), the changes since the design and the deployment boundary of deploy/DECISIONS.md are merged into architecture.md; its "Revision history" and section 13 give the details. This review is not rewritten to match: the sections above remain the record of the review as made at commit 1a3b47d. Where the text above says "design text is out of date" (sections 1, 2, 3, 4.1 to 4.2, 6), architecture.md now carries the corrected text. Open items that remain are listed in architecture.md section 9 (O1 to O4) and the recommended code changes H1 to H6 in its section 13.
+
+Production layout merged into architecture.md on 27 October 2026 (go-live; section 8, D3, D-9 and D-10, section 9 O3 resolved and O5 to O11 added, PE8); see its "Revision history".
