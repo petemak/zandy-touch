@@ -12,11 +12,14 @@
 ;; Wording for codes the API returns (api-contract.md 1.4, 8.2)
 
 (def field-labels
+  "CSV import column key -> label shown in result messages."
   {"sku" "SKU" "name" "Name" "brand" "Brand" "ownBrand" "Own brand" "category" "Category" "price" "Price"
    "shortDescription" "Short description" "description" "Description" "size" "Size" "howToUse" "How to use"
    "ingredients" "Ingredients" "featured" "Featured" "openingStock" "Opening stock"})
 
 (def code-text
+  "API error and warning code -> staff-friendly wording (api-contract.md 1.4
+  and 8.2). The server's own message wins when present."
   {"ignoredForExisting" "Ignored because this product already exists. Change stock with Adjust stock."
    "duplicateSku" "This SKU is already used by an earlier row in the file."
    "required" "This value is required."
@@ -137,10 +140,17 @@
 ;; ---------------------------------------------------------------------------
 ;; ProductImageManager
 
-(def max-images 6)
+(def max-images
+  "Most pictures per product (6), same as admin.state/max-product-images."
+  6)
 
-(defn- same-picture [im] [(:id im) (or (not-empty (:alt im)) "")])
+(defn- same-picture
+  "Identity of a picture for comparing form and saved lists: its id and its alt
+  text (nil counts as empty)."
+  [im] [(:id im) (or (not-empty (:alt im)) "")])
 
+;; Compared by id and alt text in order, so the Save pictures button is
+;; enabled only when something really changed.
 (defn images-dirty?
   "True when the pictures on the form differ from the saved ones (order, alt
   text or removal)."

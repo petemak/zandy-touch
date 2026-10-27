@@ -2,6 +2,7 @@
   "The only place that builds error responses (contract 1.3 and 1.4).")
 
 (def statuses
+  "Map from contract error code keyword (contract 1.3) to HTTP status. Unknown codes are served as 500."
   {:malformedRequest 400 :missingIdempotencyKey 400
    :unauthenticated 401 :invalidCredentials 401
    :forbidden 403 :csrfInvalid 403 :passwordChangeRequired 403
@@ -30,7 +31,9 @@
   ([code message details headers]
    (throw (ex-info message {:zandy/error {:code code :message message :details details :headers headers}}))))
 
-(defn error-data [^Throwable ex]
+(defn error-data
+  "The :zandy/error map ({:code :message :details :headers}) found on `ex` or its cause chain, or nil when `ex` is not an API error."
+  [^Throwable ex]
   (loop [e ex]
     (when e
       (or (:zandy/error (ex-data e)) (recur (ex-cause e))))))
@@ -42,8 +45,11 @@
     (error-response code message details headers)))
 
 (defn validation-failed
+  "Throws a validationFailed (422) API error. `details` is a vector of field-error maps; `message` defaults to \"Please check the highlighted fields.\""
   ([details] (validation-failed "Please check the highlighted fields." details))
   ([message details] (fail! :validationFailed message details)))
 
-(defn field-error [field code message]
+(defn field-error
+  "A validationFailed detail map {:field :code :message}; `field` is the camelCase wire name."
+  [field code message]
   {:field field :code code :message message})

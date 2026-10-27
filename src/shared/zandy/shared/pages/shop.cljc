@@ -1,6 +1,9 @@
 (ns zandy.shared.pages.shop
-  "Cart, checkout, order placed and tracking (P5 to P8). These are rendered in
-  the browser; the server sends only the document shell."
+  "Cart (P5), checkout (P6), order placed (P7) and track your order (P8).
+  Shared views (.cljc) but only the browser renders them: the server sends
+  just the document shell for these routes (route data :shell?). Pure
+  functions of page state returning hiccup; all event handlers are action
+  vectors handled by frontend.state."
   (:require [zandy.shared.format :as fmt]
             [zandy.shared.ui.core :as ui]
             [zandy.shared.ui.order :as order]
@@ -9,7 +12,17 @@
 ;; ---------------------------------------------------------------------------
 ;; P5 Cart
 
-(defn cart-page [{:keys [cart cart-check ui]}]
+;; Subtotal comes from the latest validation when there is one, otherwise from
+;; the stored prices; the stored price is the last one the customer saw.
+(defn cart-page
+  "P5 Cart. Argument: page state; uses :cart {:items}, :cart-check {:status
+  :result} (:result is the POST /api/cart-validations body) and (:cart-notice
+  :ui). States: empty cart, checking, validated, line problems (sold out,
+  unavailable, not enough stock, price changed), validation unavailable (Try
+  again). The Checkout button is disabled until a validation without problems
+  is available; clicking it dispatches [:cart/acknowledge-prices] then
+  [:nav/link \"/checkout\"]. Returns hiccup."
+  [{:keys [cart cart-check ui]}]
   (let [items (:items cart)
         result (:result cart-check)
         vlines (into {} (map (juxt :productId identity)) (:items result))
@@ -47,6 +60,12 @@
                             :else "Checkout"))
            (ui/link-button "/checkout"
                           {:full? true
+                           ;; Why [:cart/acknowledge-prices]: once the
+                           ;; customer clicks through to checkout they have
+                           ;; seen the validated prices, so the stored price
+                           ;; is moved up to the validated one and the "Price
+                           ;; changed" notice does not come back on the next
+                           ;; visit.
                            ;; proceeding to checkout means the customer has seen the prices
                            :attrs {:on {:click [[:cart/acknowledge-prices] [:nav/link "/checkout"]]}}}
                           "Checkout"))
@@ -56,19 +75,32 @@
 ;; P6 Checkout
 
 (def checkout-fields
-  "Field id -> display key for the error summary."
+  "Vector of [form-key field-id] pairs, in page order, used to build the error
+  summary links (the id is the DOM id the link focuses)."
   [[:name "checkout-name"] [:phone "checkout-phone"] [:email "checkout-email"]
    [:preferred-contact "checkout-contact"] [:city "checkout-city"] [:area "checkout-area"]
    [:address-line "checkout-address"] [:directions "checkout-directions"]
    [:payment-method "checkout-payment"] [:note "checkout-note"] [:accepted "accept-terms"]])
 
-(defn- summary-errors [errors]
+(defn- summary-errors
+  "Error-summary entries [{:id :message}] for the form errors present, in page
+  order."
+  [errors]
   (vec (for [[k id] checkout-fields
              :let [m (get errors k)]
              :when m]
          {:id id :message m})))
 
-(defn checkout-page [{:keys [cart cart-check forms refs]}]
+(defn checkout-page
+  "P6 Checkout. Argument: page state; uses :cart, :cart-check, (:checkout
+  :forms) {:values :errors :status :retry?} and :refs {:delivery-areas,
+  :policies {\"orderTerms\" ..}, :policy-status {\"orderTerms\"
+  :loading|:ready|:error}}. States: empty cart, new form, field errors,
+  submitting, retry notice after a network failure (the same idempotency key
+  is reused so the order is never placed twice), terms not accepted. Place
+  order is enabled only when the terms are accepted and loaded. Submit
+  dispatches [:checkout/submit]. Returns hiccup."
+  [{:keys [cart cart-check forms refs]}]
   (let [form (:checkout forms)
         {:keys [values errors status]} form
         result (:result cart-check)
@@ -92,6 +124,11 @@
         (when (:form errors) (ui/notice {:kind :error :live? true} (:form errors)))
         [:div.checkout-layout
          [:div.checkout-sections
+          ;; Sections 1 to 4 are plain fieldsets in one form. Field errors come
+          ;; from frontend.state/checkout-errors (a convenience check) or from
+          ;; the server's error details; the error summary links to each field.
+          ;; The Idempotency-Key for the order is kept in :order-key and is
+          ;; renewed whenever the cart changes (see frontend.state).
           [:fieldset.checkout-section
            [:legend [:span.checkout-section__num "1"] "Your details"]
            (ui/text-field {:id "checkout-name" :label "Full name" :autocomplete "name" :required? true
@@ -166,7 +203,14 @@
 ;; ---------------------------------------------------------------------------
 ;; P7 Order placed
 
-(defn order-placed-page [{:keys [last-order forms site]}]
+(defn order-placed-page
+  "P7 Order placed. Argument: page state; uses :last-order {:order <POST
+  /api/orders body>}, (:newsletter :forms) and :site. With no remembered order
+  it shows a lookup prompt linking to Track your order; otherwise the
+  thank-you, order number with a Copy button ([:copy-text]), what happens
+  next, the OrderSummary, WhatsApp and navigation links and the newsletter
+  form. Returns hiccup."
+  [{:keys [last-order forms site]}]
   (let [{:keys [order]} last-order]
     (if-not order
       [:div.container.narrow
@@ -213,7 +257,13 @@
 ;; ---------------------------------------------------------------------------
 ;; P8 Track
 
-(defn track-page [{:keys [forms site]}]
+(defn track-page
+  "P8 Track your order. Argument: page state; uses (:track :forms) {:values
+  {:order-number :phone} :errors :status :result} where :result is the POST
+  /api/order-trackings body, and :site. Renders the lookup form and, when a
+  result is present, its status, StatusTimeline, OrderSummary and payment
+  line. Submit dispatches [:track/submit]. Returns hiccup."
+  [{:keys [forms site]}]
   (let [form (:track forms)
         {:keys [values errors status result]} form]
     [:div.container.narrow

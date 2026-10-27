@@ -54,7 +54,10 @@
   (if (or (map? body) (sequential? body)) (json/encode body) body))
 
 (defn wrap-response
-  "Encodes JSON bodies and applies cache headers, ETag and 304 handling."
+  "Ring middleware (outermost): encodes map/sequence bodies as JSON and applies the route's cache policy.
+  Route data used: :cache (a Cache-Control value for successful GETs) and :method.
+  Successful cacheable GETs get an ETag (hash of the body) and answer 304 when If-None-Match matches.
+  Everything else, including every error, is sent with Cache-Control: no-store unless the handler set its own."
   [handler route]
   (fn [req]
     (let [resp (handler req)
@@ -77,7 +80,10 @@
             (assoc resp :body body :headers (assoc headers "ETag" etag))))
         (assoc resp :body body :headers headers)))))
 
-(defn wrap-errors [handler _ctx route]
+(defn wrap-errors
+  "Ring middleware that turns exceptions into the error response.
+  API errors (errors/fail!) become their own status; anything else is logged as :unhandled-exception (request id and route template only) and answered with internalError (500). `_ctx` is unused."
+  [handler _ctx route]
   (fn [req]
     (try
       (handler req)
@@ -87,6 +93,7 @@
                            (merge {:request-id (:request-id req) :route (:path route)} (log/exception-data ex)))
                 (errors/error-response :internalError "Something went wrong. Please try again.")))))))
 
+;; Reads at most 1 MiB + 1 byte so an oversized body is detected without loading it all.
 (defn- read-body-string [req]
   (if-let [in (:body req)]
     (let [bs (.readNBytes ^java.io.InputStream in 1048577)]
@@ -131,6 +138,7 @@
               (handler (assoc req :parameters {:query q :path (:path-params req) :body nil}
                               :multipart params :fingerprint (multipart-fingerprint params q)))
               ;; uploads are temporary files: remove them whatever happens (also on an idempotent replay)
+              ;; Uploads are temporary files: delete them whatever happens, including on an idempotent replay.
               (finally (doseq [{:keys [^java.io.File tempfile]} (file-parts params)]
                          (.delete tempfile)))))
 
@@ -138,6 +146,7 @@
           (do
             (when-not (json-content-type? req)
               (errors/fail! :malformedRequest "The request must be JSON (Content-Type: application/json)."))
+            ;; Body is read once here and the parsed value fingerprinted, so equal bodies with different key order or spacing hash the same.
             (let [text (read-body-string req)
                   data (try (if (str/blank? text) {} (json/decode text))
                             (catch Throwable _ (errors/fail! :malformedRequest "The request body is not valid JSON.")))
@@ -152,7 +161,11 @@
           (handler (assoc req :parameters {:query q :path (:path-params req)}
                           :fingerprint (util/fingerprint (or q {})))))))))
 
-(defn wrap-rate-limit [handler ctx route]
+(defn wrap-rate-limit
+  "Ring middleware for routes with a :rate-limit key (names an entry of config :limits).
+  Counts per limit name and client IP (client-ip, from CLIENT_IP_HEADER) in Datomic; throws rateLimited (429, Retry-After) once exceeded.
+  Side effect: one rate-limit hit transaction per request until the limit is reached."
+  [handler ctx route]
   (if-let [limit-key (:rate-limit route)]
     (fn [req]
       (let [cfg (get-in ctx [:config :limits limit-key])
@@ -161,7 +174,14 @@
         (handler req)))
     handler))
 
-(defn wrap-idempotency [handler ctx route]
+(defn wrap-idempotency
+  "Ring middleware for routes with :idempotent? true (contract 1.6). Requires an Idempotency-Key header holding a UUID.
+  The key is scoped by method, URI and key, and fingerprinted by the request body/query (:fingerprint set by wrap-validate).
+  Outcomes: first caller runs the handler and its <400 response is stored; a repeat replays the stored response with Idempotent-Replayed: true; the same key with a different body throws idempotencyKeyReused (409); a still-running original gives serviceUnavailable (503, Retry-After 1).
+  Throws missingIdempotencyKey (400) or malformedRequest (400).
+  Side effects: claim, complete or release records in Datomic.
+  Responses may carry :replay-body and :replay-status to store something other than what was sent; both are removed before the response goes out."
+  [handler ctx route]
   (if-not (:idempotent? route)
     handler
     (fn [req]
@@ -185,6 +205,8 @@
                                                  {:status (or (:replay-status resp) (:status resp 200))
                                                   :body (if (contains? resp :replay-body) (:replay-body resp) (:body resp))})
                           (dissoc resp :replay-body :replay-status))
+                      ;; Responses >= 400 are not stored: release the claim so a corrected retry with the same key can run.
+                      ;; The catch below does the same when the handler throws.
                       (do (idempotency/release! (:conn ctx) scoped token) resp)))
                   (catch Throwable t
                     (idempotency/release! (:conn ctx) scoped token)

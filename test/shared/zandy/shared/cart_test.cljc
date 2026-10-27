@@ -1,4 +1,6 @@
 (ns zandy.shared.cart-test
+  "Tests of shared.cart: add, merge, clamp, validation request and price
+  acknowledgement. Runs on the JVM and in the Node test build."
   (:require [clojure.test :refer [deftest is testing]]
             [zandy.shared.cart :as cart]
             [zandy.shared.ui.order :as order]))

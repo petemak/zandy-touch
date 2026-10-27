@@ -1,8 +1,15 @@
 (ns zandy.shared.format
-  "Pure formatting helpers."
+  "Pure formatting helpers (money, phone numbers, dates in Kampala time, labels
+  for statuses and stock movements). Shared code (.cljc): runs on the JVM
+  inside the frontend server (ssr) and in the browser, and must give identical
+  text in both so server-rendered markup matches the client render. Depends on
+  nothing else in the project (architecture.md section 2.4)."
   (:require [clojure.string :as str]))
 
-(defn group-thousands [n]
+(defn group-thousands
+  "Integer `n` as text with comma thousands separators: 85000 -> \"85,000\",
+  -1200 -> \"-1,200\". Fractions are dropped (`long`). Pure."
+  [n]
   (let [s (str (abs (long n)))
         parts (loop [s s acc ()]
                 (if (<= (count s) 3)
@@ -23,7 +30,10 @@
        (remove str/blank?)
        vec))
 
-(defn first-name [full-name]
+(defn first-name
+  "First word of `full-name` (\"Jane Doe\" -> \"Jane\"). nil or blank gives nil.
+  Used in the order-placed greeting (P7)."
+  [full-name]
   (first (str/split (str/trim (or full-name "")) #"\s+")))
 
 (defn phone-display
@@ -38,11 +48,17 @@
   [phone]
   (str/replace (or phone "") #"\D" ""))
 
+;; Why a fixed offset: Africa/Kampala is UTC+3 with no daylight saving, so
+;; plain arithmetic is exact. It avoids java.time on the server vs Intl in the
+;; browser, which could format differently and cause a mismatch between the
+;; server HTML and the client render.
 (def kampala-offset-minutes
   "Africa/Kampala is UTC+3 all year (East Africa Time, no daylight saving)."
   180)
 
-(def kampala-label "Kampala time")
+(def kampala-label
+  "Text shown after a time to say which clock it is: \"Kampala time\"."
+  "Kampala time")
 
 (def ^:private month-names ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"])
 
@@ -71,6 +87,8 @@
     (* (if (= "-" sign) -1 1) (+ (* 60 (parse-long h)) (parse-long m)))
     0))
 
+;; Parse the ISO text by regex (not Date/Instant) for the same reason:
+;; identical results on the JVM and in the browser.
 (defn kampala-parts
   "ISO 8601 instant -> {:y :m :d :hh :mm} on the Kampala wall clock, or nil when
   the text has no time part. Pure arithmetic with a fixed +3 offset, so the JVM
@@ -114,6 +132,8 @@
    ["damagedOrLost" "Damaged or lost"] ["returnedGoods" "Returned goods"] ["other" "Other"]])
 
 (def movement-types
+  "Stock-movement types returned by the API (api-contract.md 8.3) and their
+  staff-facing labels, as [code label] pairs."
   [["initial" "Opening stock"] ["adjustment" "Adjusted by staff"] ["order" "Customer order"]
    ["orderCancelled" "Order cancelled, stock returned"]])
 
@@ -122,8 +142,14 @@
   [table code]
   (when (some? code) (or (some (fn [[c l]] (when (= c code) l)) table) (str code))))
 
-(defn movement-type-label [t] (label-of movement-types t))
-(defn stock-reason-label [r] (label-of stock-reasons r))
+(defn movement-type-label
+  "Label for a stock-movement type code `t`; an unknown code is shown as is,
+  nil gives nil."
+  [t] (label-of movement-types t))
+(defn stock-reason-label
+  "Label for a stock-adjustment reason code `r` (see stock-reasons); unknown
+  codes are shown as is, nil gives nil."
+  [r] (label-of stock-reasons r))
 
 (defn signed-delta
   "5 -> \"+5\", -2 -> \"\u22122\" (a real minus sign), 0 -> \"0\"."
@@ -156,7 +182,11 @@
   [{:keys [days opens closes]}]
   (str days ": " (hhmm->label opens) " to " (hhmm->label closes)))
 
-(defn truncate [s n]
+(defn truncate
+  "`s` cut to at most `n` characters, ending in an ellipsis when it was cut
+  (trailing space before the ellipsis is removed). nil is treated as \"\". Used
+  to keep meta descriptions and search titles short."
+  [s n]
   (let [s (or s "")]
     (if (> (count s) n)
       (str (str/trimr (subs s 0 (dec n))) "…")
@@ -179,7 +209,11 @@
     "cancelled" "Cancelled"
     (str status)))
 
-(defn staff-status-label [status]
+(defn staff-status-label
+  "Admin-facing label for an order status code (\"placed\" -> \"New\",
+  \"approvedForDelivery\" -> \"Out for delivery\"). Unknown codes are shown as is.
+  Compare order-status-label for customers."
+  [status]
   (case status
     "placed" "New"
     "confirmed" "Confirmed"
@@ -188,7 +222,10 @@
     "cancelled" "Cancelled"
     (str status)))
 
-(defn payment-label [m]
+(defn payment-label
+  "Label for a payment method code: \"cash\" -> \"Cash\", \"mobileMoney\" -> \"Mobile
+  money\"; unknown codes are shown as is."
+  [m]
   (case m
     "cash" "Cash"
     "mobileMoney" "Mobile money"

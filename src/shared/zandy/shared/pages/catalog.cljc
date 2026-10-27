@@ -1,17 +1,30 @@
 (ns zandy.shared.pages.catalog
-  "Home, shop, category and product pages (P1 to P4)."
+  "Catalogue pages: home (P1), shop (P2), category (P3) and product detail
+  (P4). Shared views (.cljc), pure functions of page state returning hiccup;
+  rendered on the JVM for the first response and again in the browser
+  (architecture.md section 2.4)."
   (:require [zandy.shared.routes :as routes]
             [zandy.shared.ui.core :as ui]
             [zandy.shared.ui.product :as product]))
 
-(defn- section [id title more-path & content]
+(defn- section
+  "Home-page section: <section> labelled by its h2 (`id`, `title`), with an
+  optional \"View all\" link to `more-path` and the given content children.
+  Returns hiccup."
+  [id title more-path & content]
   [:section.section {:aria-labelledby id}
    [:div.section__head
     [:h2.section__title {:id id} title]
     (when more-path (ui/link more-path {:class "text-link"} "View all"))]
    (into [:div] content)])
 
-(defn home [{:keys [site page]}]
+(defn home
+  "P1 Home. Argument: page state; uses :site (WhatsApp number) and (:data
+  :page) = {:categories [...] :new listing :own listing :featured listing},
+  where a listing is {:items [product-summary]}. Renders the hero with the
+  only h1, category tiles, then New, own-brand and Featured product rows when
+  they are not empty, and the \"How ordering works\" steps. Returns hiccup."
+  [{:keys [site page]}]
   (let [{:keys [categories new own featured]} (:data page)]
     [:div
      [:section.hero {:aria-labelledby "hero-title"}
@@ -44,7 +57,14 @@
         [:li.step (ui/icon :phone :lg) [:h3 "We confirm delivery with you"] [:p "We contact you to agree the delivery fee before anything is sent."]]
         [:li.step (ui/icon :pay-on-delivery :lg) [:h3 "Pay on delivery"] [:p "Pay with cash or mobile money when your order arrives."]]]]]]))
 
-(defn shop [{:keys [route page site]}]
+(defn shop
+  "P2 Shop. Argument: page state; uses (:query :route) for :q, :availability
+  and :sort and (:data :page) = {:products <list response {:items :page
+  :pageSize :totalItems}> :categories [...]}. Renders breadcrumb, h1 (\"All
+  products\" or \"Results for ...\"), result count, filter bar and the product
+  listing with Load more, or the \"Nothing matched\" empty state. :loading-more?
+  on the page marks a Load more request in flight. Returns hiccup."
+  [{:keys [route page site]}]
   (let [data (get-in page [:data :products])
         query (select-keys (:query route) [:q :availability :sort])
         q (:q query)]
@@ -55,7 +75,12 @@
      (product/filter-bar {:base-path "/shop" :query query :current-slug nil})
      (product/product-listing data {:base-path "/shop" :query query :site site :loading? (get-in page [:loading-more?])})]))
 
-(defn category [{:keys [route page site]}]
+(defn category
+  "P3 Category. Argument: page state; uses (:params :route) :slug and (:data
+  :page) = {:products <list response> :categories [...]}. The category name
+  and intro come from the matching entry in :categories. Renders breadcrumb,
+  h1, filter bar and listing, or the empty state. Returns hiccup."
+  [{:keys [route page site]}]
   (let [slug (get-in route [:params :slug])
         cat (some #(when (= slug (:slug %)) %) (get-in page [:data :categories]))
         data (get-in page [:data :products])
@@ -71,7 +96,14 @@
       (product/filter-bar {:base-path base-path :query query :current-slug slug})
       (product/product-listing data {:base-path base-path :query query :site site :loading? (get-in page [:loading-more?])})]]))
 
-(defn product-page [{:keys [page site] ui-state :ui}]
+(defn product-page
+  "P4 Product detail. Argument: page state; (:data :page) is the GET
+  /api/products/{slug} body (with :category, :images, :related, :maxQuantity
+  ...), (:ui state) holds :gallery {:index}, and :product {:qty :stock-note
+  :added?}. Renders breadcrumb, gallery, the h1 name, buy box (available, sold
+  out, added-to-cart notice), details accordion and related products. Returns
+  hiccup."
+  [{:keys [page site] ui-state :ui}]
   (let [p (:data page)
         {:keys [category related]} p]
     [:div.container

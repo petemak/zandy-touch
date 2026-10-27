@@ -1,20 +1,32 @@
 (ns zandy.shared.ui.layout
-  "Site header, footer and the page frame."
+  "Site frame shared by every public page: SiteHeader / Nav, AnnouncementBar,
+  SiteFooter (with NewsletterForm and social links), logos and the page frame
+  with the skip link. Pure hiccup functions, shared code (.cljc): rendered on
+  the JVM for the first response and in the browser afterwards. The admin area
+  has its own shell in frontend.admin.core."
   (:require [clojure.string :as str]
             [zandy.shared.cart :as cart]
             [zandy.shared.format :as fmt]
             [zandy.shared.routes :as routes]
             [zandy.shared.ui.core :as ui]))
 
-(def nav-categories ui/nav-categories)
+(def nav-categories
+  "The six fixed categories as [slug label] pairs (alias of
+  ui.core/nav-categories), shown in the header navigation strip."
+  ui/nav-categories)
 
-(def static-prefix "/static/assets/")
+(def static-prefix
+  "URL prefix under which the frontend server serves the files of assets/ (see
+  ssr.static)."
+  "/static/assets/")
 
 (defn logo
   "Logo as an image from assets/logo. `variant` is a file name stem."
   [stem alt cls]
   [:img {:class cls :src (str static-prefix "logo/" stem ".svg") :alt alt}])
 
+;; The logo files are transparent WebP made for dark backgrounds, which is why
+;; they only appear in the header, footer and admin bar.
 (def brand-logos
   "The owner's real logo, cut from business/images/logo/zandy-logo.jpeg.
   Transparent WebP for dark surfaces only (header, footer, admin bar)."
@@ -28,7 +40,13 @@
     [:img {:class cls :src (str static-prefix "logo/" file) :alt alt
            :width width :height height}]))
 
-(defn site-header [{:keys [cart route] ui-state :ui}]
+(defn site-header
+  "SiteHeader / Nav. Argument: page state; uses :cart (the count on the cart
+  link), :route (marks the current nav link with aria-current) and
+  (:search-open? :ui). Renders the logo link, the search disclosure (a GET
+  form to /shop, also handled client-side by [:search/submit]), the cart link
+  and the category nav strip. Returns hiccup."
+  [{:keys [cart route] ui-state :ui}]
   (let [n (cart/count-items cart)
         current (get-in route [:params :slug])]
     [:header.site-header
@@ -36,6 +54,9 @@
       (ui/link "/" {:class "site-header__logo" :aria-label "Zandy Touch, home"}
                (brand-logo :horizontal "" "site-header__logo-img"))
       [:div.site-header__actions
+       ;; Why a <details>/<summary>: the search field opens and closes without
+       ;; JavaScript; the toggle event keeps :search-open? in state so a
+       ;; re-render does not close it.
        [:details.header-search {:open (boolean (:search-open? ui-state))
                                 :on {:toggle [[:ui/search-toggled [:event/target.open]]]}}
         [:summary.icon-button {:aria-label "Search products"}
@@ -80,15 +101,18 @@
                   (if (= :submitting status) "Subscribing" "Subscribe"))])))
 
 (def ^:private social-networks
-  "Order shown in the footer: [key label icon]. Items whose URL is null (not yet
-  configured) are hidden (api-contract.md section 2)."
+  "Footer social networks in display order as [site-info key, label, icon
+  name]. Networks whose URL is not configured are hidden (api-contract.md
+  section 2)."
   [[:tiktok "TikTok" :tiktok]
    [:facebook "Facebook" :facebook]
    [:instagram "Instagram" :instagram]])
 
 (defn social-links
-  "Footer \"Follow us\" block: a heading and one labelled icon link per
-  non-blank profile in site-info `social`, or nil when none is configured."
+  "Footer \"Follow us\" block. `social` is the site-info social map {:tiktok
+  :facebook :instagram}; networks with a blank URL are hidden. Returns hiccup,
+  or nil when none is configured. Links open in a new tab and say so in their
+  accessible name."
   [social]
   (let [shown (filter (fn [[k]] (not (str/blank? (get social k)))) social-networks)]
     (when (seq shown)
@@ -100,7 +124,12 @@
           [:li (ui/external-link (get social k) {:rel "noopener" :target "_blank" :aria-label (str "Zandy Touch on " label " (opens in a new tab)")}
                                  (ui/icon icon) [:span.site-footer__social-label label])])]])))
 
-(defn site-footer [{:keys [site forms]}]
+(defn site-footer
+  "SiteFooter. Argument: page state; uses :site (phone, WhatsApp, email,
+  shopAddress, openingHours, social) and (:newsletter :forms). Renders the
+  logo lockup, link columns, contact details, social links and the newsletter
+  form. Returns hiccup."
+  [{:keys [site forms]}]
   (let [{:keys [phone whatsapp email shopAddress openingHours social]} site]
     [:footer.site-footer
      [:div.site-footer__inner.container
@@ -135,11 +164,16 @@
        (newsletter-form {:id "footer-email" :source "footer" :form (:newsletter forms) :dark? true})]]
      [:p.site-footer__copy.container "© Zandy Touch, Kampala, Uganda"]]))
 
-(defn announcement-bar []
+(defn announcement-bar
+  "AnnouncementBar: \"Pay on delivery: cash or mobile money\". Returns hiccup."
+  []
   [:p.announcement-bar "Pay on delivery: cash or mobile money"])
 
 (defn page-frame
-  "Header, main content and footer. `content` is hiccup for <main>."
+  "Page frame. Arguments: page state and `content` (hiccup for <main>). Renders
+  the skip link (focuses #main), announcement bar, header, main, footer and a
+  polite live region that reads (:announcement :ui) to screen reader users.
+  Returns hiccup."
   [state content]
   [:div.page
    [:a.skip-link {:href "#main" :on {:click [[:dom/focus-id "main"]]}} "Skip to content"]

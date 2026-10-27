@@ -1,1 +1,1 @@
-["^ ","~$failure-logs-one-json-line-with-request-id-and-no-personal-data",["^ ","~:row",9,"~:col",1,"~:fixed-arities",["~#set",[0]],"~:name","^0","~:ns","~$zandy.ssr.log-test","~:top-ns","^7","~:arities",["^ ","~i0",["^ ","~:ret","~:boolean"]]],"~:filename","test/zandy/ssr/log_test.clj"]
+["^ ","~$failure-logs-one-json-line-with-request-id-and-no-personal-data",["^ ","~:row",11,"~:col",1,"~:fixed-arities",["~#set",[0]],"~:name","^0","~:ns","~$zandy.ssr.log-test","~:top-ns","^7","~:arities",["^ ","~i0",["^ ","~:ret","~:boolean"]]],"~:filename","test/zandy/ssr/log_test.clj"]

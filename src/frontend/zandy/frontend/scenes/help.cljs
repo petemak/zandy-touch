@@ -10,7 +10,11 @@
 (defn- session [role]
   {:user {:id "u1" :name (if (= "owner" role) "Sandra" "Grace") :email "staff@example.test" :role role :mustChangePassword false} :csrf "x"})
 
-(defn- st [role url data]
+(defn- st
+  "Admin state for the help scenes. Arguments: `role` (\"owner\" or \"support\"),
+  `url` and loaded admin `data`. Returns a state map for admin.core/view with
+  a signed-in user of that role."
+  [role url data]
   (merge (pages/initial-state)
          {:route (routes/match-url url) :site fx/site :page {:status :ok}
           :admin {:session (session role) :data data :ui {}}}))

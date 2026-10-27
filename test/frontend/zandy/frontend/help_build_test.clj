@@ -1,19 +1,25 @@
 (ns zandy.frontend.help-build-test
-  "The help build step (scripts/build/help.clj, namespace `help`): the parser,
-  each error case, and the committed data namespace being up to date. Runs on
-  the JVM from ssr/ (clojure -M:test)."
+  "Tests of the help build step (scripts/build/help.clj, namespace `help`): the
+  parser, each error case, and the committed data namespace being up to date.
+  Runs on the JVM from ssr/ (clojure -M:test)."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [help]))
 
 (def root
+  "Project root directory, found by looking for admin-help.md from the current
+  directory upwards."
   (first (filter #(.exists (io/file % "admin-help.md")) ["." ".." "../.."])))
 
-(defn- header [& {:keys [id title roles pages group] :or {id "orders" title "Orders" roles "owner, support" pages "A4, A5" group "Orders"}}]
+(defn- header
+  "A valid topic header line, with optional overrides of each field."
+  [& {:keys [id title roles pages group] :or {id "orders" title "Orders" roles "owner, support" pages "A4, A5" group "Orders"}}]
   (str "## " id " | " title " | roles: " roles " | pages: " pages " | group: " group))
 
-(def rest-pages "A6, A7, A8, A9, A10, A11, A12")
+(def rest-pages
+  "Page ids that complete the A4 to A12 mapping in a minimal document."
+  "A6, A7, A8, A9, A10, A11, A12")
 
 (defn- doc
   "A minimal good document: one topic that maps every page A4 to A12, plus extra lines."

@@ -1,4 +1,8 @@
 (ns zandy.frontend.state-test
+  "Unit tests of the pure action handlers in zandy.frontend.state and the admin
+  handlers: navigation, product page, cart (validation, price
+  acknowledgement), forms with idempotency keys, checkout results, import and
+  stock flows. They run in Node (shadow-cljs :test build) and need no DOM."
   (:require [cljs.test :refer [deftest is testing]]
             [zandy.frontend.admin.core :as admin]
             [zandy.frontend.admin.state :as as]
@@ -8,12 +12,18 @@
             [zandy.shared.routes :as routes]
             [zandy.shared.ui.order :as order]))
 
-(def serum {:id "p1" :slug "serum" :name "Serum" :price 85000 :image nil :maxQuantity 10})
+(def serum
+  "Sample product used by the tests."
+  {:id "p1" :slug "serum" :name "Serum" :price 85000 :image nil :maxQuantity 10})
 
-(defn st [& {:as extra}]
+(defn st
+  "Test state: the initial state at \"/\" with a loaded page, plus extra keys."
+  [& {:as extra}]
   (merge (s/initial-state) {:route (routes/match-url "/") :page {:status :ok}} extra))
 
-(defn effects-named [result fx-name] (filter #(= fx-name (first %)) (:fx result)))
+(defn effects-named
+  "The effects in handler result `result` whose name is `fx-name`."
+  [result fx-name] (filter #(= fx-name (first %)) (:fx result)))
 
 (deftest add-to-cart-persists-and-announces
   (let [r (s/handle (st) [:cart/add serum 2])]
@@ -60,7 +70,9 @@
         r (s/handle state [:product/rechecked "serum" {:status 200 :body {:slug "serum" :availability "soldOut" :maxQuantity 0}}])]
     (is (= "This product has just sold out." (get-in r [:state :ui :product :stock-note])))))
 
-(def valid-values {:name "Amina Nakato" :phone "0771 234 567" :city "Kampala" :area "Ntinda" :address-line "Plot 12" :payment-method "cash" :accepted? true})
+(def valid-values
+  "Checkout form values that pass client validation."
+  {:name "Amina Nakato" :phone "0771 234 567" :city "Kampala" :area "Ntinda" :address-line "Plot 12" :payment-method "cash" :accepted? true})
 
 (deftest checkout-validation
   (let [cities ["Kampala" "Jinja"]]
@@ -70,7 +82,9 @@
     (is (contains? (s/checkout-errors (assoc valid-values :accepted? false) cities) :accepted))
     (is (contains? (s/checkout-errors (assoc valid-values :email "nope") cities) :email))))
 
-(defn checkout-state []
+(defn checkout-state
+  "State on /checkout with a cart, delivery areas and the order terms loaded."
+  []
   (st :route (routes/match-url "/checkout")
       :cart (cart/add-item cart/empty-cart serum 2 10)
       :refs {:delivery-areas {:countries [{:cities ["Kampala"]}]} :policies {"orderTerms" {:version "2026-10-01"}}}
@@ -151,7 +165,9 @@
 ;; ---------------------------------------------------------------------------
 ;; Admin: navigation, product pictures, bulk import
 
-(defn jpg [n] {:name n :size 1000 :type "image/jpeg" :file n})
+(defn jpg
+  "A picked JPEG file map named `n`."
+  [n] {:name n :size 1000 :type "image/jpeg" :file n})
 
 (deftest admin-navigation-has-no-photo-library
   (is (= ["Orders" "Products" "Import" "Inbox" "Staff" "My account" "Help"] (map #(nth % 2) admin/nav-items)))
@@ -299,8 +315,12 @@
           (is (= ["a.jpg"] (map :name (get-in again [:state :forms :import-pictures :queue]))))
           (is (empty? (get-in again [:state :forms :import-pictures :results]))))))))
 
-(def draft-ok {:id "d1" :name "Cream" :price 5000 :image {:id "i"} :categorySlug "skincare"})
-(def draft-bare {:id "d2" :name "Oil" :price nil :image nil :categorySlug "body-care"})
+(def draft-ok
+  "Sample draft that can be published."
+  {:id "d1" :name "Cream" :price 5000 :image {:id "i"} :categorySlug "skincare"})
+(def draft-bare
+  "Sample draft with no price or picture."
+  {:id "d2" :name "Oil" :price nil :image nil :categorySlug "body-care"})
 
 (deftest drafts-say-what-they-lack-and-publish-only-complete-ones
   (is (= [] (as/draft-lacks draft-ok)))
@@ -353,7 +373,9 @@
         (sequential? tree) (mapcat #(find-nodes % pred) tree)
         :else []))
 
-(def archived {:id "p9" :version 4 :name "Old Serum" :status "archived"})
+(def archived
+  "Sample archived product."
+  {:id "p9" :version 4 :name "Old Serum" :status "archived"})
 
 (deftest restore-from-the-product-page-sends-the-version-and-published
   (let [state (-> (st) (assoc-in [:admin :data :product :body] archived))
@@ -496,7 +518,9 @@
   (let [state (st :route (routes/match-url "/admin?q=ZT-7K3P9Q"))]
     (is (= "ZT-7K3P9Q" (get-in (as/route-requests state) [:orders :query :q])))))
 
-(def price-v {:items [{:productId "p1" :unitPrice 90000 :name "Serum" :slug "serum" :image nil :problem nil}] :hasProblems false})
+(def price-v
+  "Sample cart validation where the price differs from the stored one."
+  {:items [{:productId "p1" :unitPrice 90000 :name "Serum" :slug "serum" :image nil :problem nil}] :hasProblems false})
 
 (deftest price-change-is-kept-until-seen
   (let [cart0 (cart/add-item cart/empty-cart serum 1 10)

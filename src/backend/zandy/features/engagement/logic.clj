@@ -3,7 +3,9 @@
   (:require [clojure.string :as str]
             [zandy.platform.json :as json]))
 
-(def consent-text-version "2026-10-01")
+(def consent-text-version
+  "Version label stored with each subscription: identifies the consent wording shown to the subscriber."
+  "2026-10-01")
 
 (defn csv-cell
   "Quotes a cell when needed and neutralises spreadsheet formulas (cells starting with = + - @)."
@@ -14,9 +16,13 @@
       (str "\"" (str/replace s "\"" "\"\"") "\"")
       s)))
 
-(def csv-columns ["id" "email" "phone" "subscribedAt" "source" "active" "unsubscribeUrl"])
+(def csv-columns
+  "Header names of the subscriber CSV export, in column order."
+  ["id" "email" "phone" "subscribedAt" "source" "active" "unsubscribeUrl"])
 
-(defn subscribers-csv [rows]
+(defn subscribers-csv
+  "The subscriber export as a CSV string with CRLF line endings. `rows` are subscriber maps plus :unsubscribe-url; :subscribed-at is formatted as ISO 8601 UTC. Pure."
+  [rows]
   (str (str/join "," csv-columns) "\r\n"
        (str/join "" (map (fn [r]
                            (str (str/join "," (map csv-cell [(:id r) (:email r) (:phone r)
@@ -25,5 +31,7 @@
                                 "\r\n"))
                          rows))))
 
-(defn unsubscribe-url [base-url token]
+(defn unsubscribe-url
+  "The public unsubscribe link for `token`: base-url + \"/unsubscribe?token=\" + token. Pure."
+  [base-url token]
   (str base-url "/unsubscribe?token=" token))

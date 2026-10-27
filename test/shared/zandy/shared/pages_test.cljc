@@ -1,4 +1,7 @@
 (ns zandy.shared.pages-test
+  "Tests of shared.pages: required API calls per route, query normalisation,
+  assembling page state from responses. Runs on the JVM and in the Node test
+  build."
   (:require [clojure.test :refer [deftest is testing]]
             [zandy.shared.pages :as pages]
             [zandy.shared.routes :as routes]))

@@ -31,6 +31,7 @@
       (let [f (edn/read {:eof ::eof :readers {'inst clojure.instant/read-instant-date}} rdr)]
         (if (= f ::eof) forms (recur (conj forms f)))))))
 
+;; Database functions are installed from source files so they are versioned with the migration (and covered by its checksum).
 (defn- dbfn-tx
   "A db function file holds a map {:params [...]} followed by the body forms."
   [{:keys [ident file]}]
@@ -81,7 +82,9 @@
     (into {} (d/q '[:find ?id ?cs :where [?e :migration/id ?id] [?e :migration/checksum ?cs]] db))
     {}))
 
-(defn check-numbering! [migrations]
+(defn check-numbering!
+  "Throws ex-info when the migration numbers are not exactly 1..n in order. Returns nil otherwise."
+  [migrations]
   (let [nums (map :number migrations)]
     (when-not (= nums (range 1 (inc (count nums))))
       (throw (ex-info "Migration numbering has a gap or is out of order" {:numbers nums})))))
@@ -90,6 +93,8 @@
   "Returns the migrations still to apply, after verifying ledger consistency."
   [conn migrations]
   (check-numbering! migrations)
+  ;; Ledger rules: an applied migration whose file is gone or whose checksum changed is an error, never silently skipped,
+  ;; so an edited migration cannot make instances disagree about the schema.
   (let [applied (ledger (d/db conn))
         by-id (into {} (map (juxt (comp str :id) identity)) migrations)]
     (doseq [[id _] applied]
@@ -110,6 +115,7 @@
                    :migration/checksum (:checksum m)
                    :migration/applied-at (Date.)}
             tx (migration-tx-data m)]
+        ;; Migration 1 creates the ledger attributes themselves, so its own ledger entry cannot be in the same transaction.
         (if (ledger-installed? (d/db conn))
           @(d/transact conn (conj tx entry))
           (do @(d/transact conn tx)
@@ -126,7 +132,10 @@
                       {:pending (mapv (comp str :id) todo)})))
     true))
 
-(defn -main [& _]
+(defn -main
+  "Entry point of `clojure -M:migrate`: loads config for the current profile, applies every pending migration, logs the count.
+  Shuts down agents at the end because Datomic's non-daemon threads would otherwise keep the JVM alive against a real transactor."
+  [& _]
   (let [cfg (config/load-config (config/profile-from-env))
         conn (datomic/connect! (get-in cfg [:datomic :uri]))
         n (migrate! conn)]

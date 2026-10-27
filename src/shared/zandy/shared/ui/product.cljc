@@ -1,10 +1,18 @@
 (ns zandy.shared.ui.product
-  "Product cards, grids, gallery, buy box, filters."
+  "Product components: ProductCard, ProductGrid, CategoryTile, Gallery,
+  QuantityStepper, buy box, details accordion, filter bar, Load more and the
+  listing with its empty state (design-spec.md section 3, used by P1 to P4).
+  Pure hiccup functions, shared code (.cljc). Actions are data handled by
+  frontend.state."
   (:require [zandy.shared.format :as fmt]
             [zandy.shared.routes :as routes]
             [zandy.shared.ui.core :as ui]))
 
-(defn badges [{:keys [isNew isOwnBrand availability]}]
+(defn badges
+  "Badge group for a product summary. Argument: product map with :isNew,
+  :isOwnBrand and :availability (\"available\" or \"soldOut\"). Sold out hides
+  New. Returns hiccup, or nil when there are no badges."
+  [{:keys [isNew isOwnBrand availability]}]
   (let [bs (cond-> []
              (= "soldOut" availability) (conj (ui/badge :sold-out))
              (and isNew (not= "soldOut" availability)) (conj (ui/badge :new))
@@ -13,8 +21,10 @@
       (into [:div.badges] bs))))
 
 (defn product-card
-  "The whole card is one link (no overlay), so it needs no positioning trick to
-  be clickable."
+  "ProductCard. Argument: product summary {:slug :name :brand :price
+  :availability :image :isNew :isOwnBrand}. The whole card is one <a> (client
+  navigation through [:nav/link]); sold-out products get the is-sold-out class
+  and a visually hidden \"(sold out)\". Returns hiccup."
   [{:keys [slug name brand price availability image] :as p}]
   (let [sold-out? (= "soldOut" availability)]
     [:article {:class (ui/classes "product-card" (when sold-out? "is-sold-out"))}
@@ -28,19 +38,27 @@
                [:p.product-card__price (ui/price price)
                 (when sold-out? (ui/visually-hidden " (sold out)"))]])]))
 
-(defn product-grid [items]
+(defn product-grid
+  "ProductGrid: a list of ProductCards. `items` is a seq of product summaries
+  from GET /api/products. Returns hiccup."
+  [items]
   [:ul.product-grid
    (for [p items]
      ^{:key (:id p)} [:li (product-card p)])])
 
 (defn product-row
-  "Horizontally scrollable on phones, grid on desktop (home sections)."
+  "Same cards as product-grid, in a list that scrolls sideways on phones and is
+  a grid on desktop (home sections). Returns hiccup."
   [items]
   [:ul.product-grid.product-grid--row
    (for [p items]
      ^{:key (:id p)} [:li (product-card p)])])
 
-(defn category-tile [{:keys [slug name productCount]}]
+(defn category-tile
+  "CategoryTile for the home page. Argument: category map {:slug :name
+  :productCount} from GET /api/categories. Links to the category page. Returns
+  hiccup."
+  [{:keys [slug name productCount]}]
   [:li.category-tile
    (ui/link (routes/path-for :category {:slug slug}) {:class "category-tile__link"}
             (ui/icon (keyword (str "category-" slug)) :lg)
@@ -48,7 +66,10 @@
             [:p.category-tile__count (str productCount (if (= 1 productCount) " product" " products"))])])
 
 (defn gallery
-  "Main image plus thumbnails. `selected` is the index in :ui :gallery."
+  "Gallery. Arguments: product map {:images [...] :name ...} and `selected`
+  (index from (:gallery :ui), clamped to the available images). The main image
+  is eager-loaded (first screen); thumbnails dispatch [:gallery/select i].
+  With no images a placeholder is shown. Returns hiccup."
   [{:keys [images name] :as p} selected]
   (let [selected (min (or selected 0) (max 0 (dec (count images))))
         main (nth images selected nil)]
@@ -70,7 +91,10 @@
          images)])]))
 
 (defn quantity-stepper
-  "value, max. `id` ties the label; actions are [:cart/..] data."
+  "QuantityStepper. Argument map: {:id :label (product name, for accessible
+  names) :value :max-q :on-dec :on-inc (action vectors) :on-set (action
+  vector; the typed value is appended)}. The minus button is disabled at 1 and
+  the plus button at `max-q`. Returns hiccup."
   [{:keys [id label value max-q on-dec on-inc on-set]}]
   [:div.stepper {:role "group" :aria-label label}
    [:button.stepper__button {:type "button" :aria-label (str "Decrease quantity of " label)
@@ -86,9 +110,13 @@
     (ui/icon :plus)]])
 
 (defn buy-box
-  "Name, price, availability, stepper and add to cart. `qty` is the chosen
-  quantity, `stock-note` a message from a stock re-check, `added?` shows the
-  confirmation."
+  "Buy box on P4. Arguments: product map (detail response: :name :brand :price
+  :availability :maxQuantity ...) and options {:qty (chosen quantity)
+  :stock-note (message after a stock re-check) :added? (show the \"Added\"
+  notice) :site}. States: available, sold out (disabled button and a WhatsApp
+  question link), limited stock hint when maxQuantity is under 10, and
+  just-added. Add to cart dispatches [:cart/add product-subset qty]. Returns
+  hiccup."
   [{:keys [name brand price availability maxQuantity] :as p} {:keys [qty stock-note added? site]}]
   (let [sold-out? (or (= "soldOut" availability) (<= (or maxQuantity 0) 0))
         qty (min (max 1 (or qty 1)) (max 1 (or maxQuantity 1)))]
@@ -128,6 +156,10 @@
                            {:rel "noopener"} "Questions? Chat on WhatsApp")])]]))
 
 (defn details-accordion
+  "Accordion with the Description, Size, How to use and Ingredients sections
+  that the product has; the first one is open. Argument: product map
+  {:description :size :howToUse :ingredients}. Returns hiccup, or nil when it
+  has none of them."
   [{:keys [description size howToUse ingredients]}]
   (let [sections (cond-> []
                    (seq description) (conj ["Description" (into [:div] (for [para (fmt/paragraphs description)] [:p para]))])
@@ -145,12 +177,17 @@
         sections)])))
 
 (def sort-options
+  "The sort choices offered on listings as [api-value label] pairs; they match
+  the `sort` values accepted by pages/normalise-query."
   [["newest" "Newest"] ["priceAsc" "Price: low to high"] ["priceDesc" "Price: high to low"] ["nameAsc" "Name"]])
 
 (defn filter-bar
-  "Category chips (links), in-stock toggle and sort select. They are a GET form
-  and links, so they work without JavaScript. `base-path` is /shop or the
-  category path. `query` holds the UI query (:q :availability :sort)."
+  "Category chips (links), in-stock toggle and sort select. Argument map:
+  {:base-path (/shop or the category path) :query (the UI query {:q
+  :availability :sort}) :current-slug (selected category, nil for All)}. The
+  chips and the GET form work without JavaScript; with it, submit dispatches
+  [:filters/submit base-path form-data] and the controls submit the form on
+  change. Returns hiccup."
   [{:keys [base-path query current-slug]}]
   [:div.filter-bar
    [:ul.chips {:aria-label "Categories"}
@@ -180,7 +217,11 @@
     [:button.button.button--secondary.filter-form__apply {:type "submit"} [:span.button__label "Apply"]]]])
 
 (defn load-more
-  "A plain link to the next page; the client turns it into an in-place load."
+  "Load more link. Argument map: {:base-path :query :page :pageSize :totalItems
+  :loading?}. Returns nil when everything is shown; otherwise a link to the
+  next page (\"?page=n+1\") that the click handler turns into
+  [:products/load-more] (in-place load). Without JavaScript it is ordinary
+  pagination."
   [{:keys [base-path query page pageSize totalItems loading?]}]
   (let [shown (* page pageSize)]
     (when (< shown totalItems)
@@ -192,7 +233,10 @@
                 [:span.button__label (if loading? "Loading" "Load more")])])))
 
 (defn product-listing
-  "Grid plus empty state and load more. `data` is the API list response."
+  "Product grid plus Load more, or the \"Nothing matched\" empty state with
+  category chips and a WhatsApp link. Arguments: `data` (GET /api/products
+  response {:items :page :pageSize :totalItems}) and `opts` ({:base-path
+  :query :site :loading?}). Returns hiccup."
   [{:keys [items] :as data} opts]
   (if (seq items)
     [:div

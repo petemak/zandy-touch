@@ -10,13 +10,22 @@
            (java.nio.file Files)
            (javax.imageio ImageIO)))
 
-(def variants {:thumb 480 :medium 800 :large 1200})
-(def max-bytes (* 5 1024 1024))
-(def max-side 6000)
+(def variants
+  "Image variants produced for every photo: name to target width in pixels (never enlarged beyond the source)."
+  {:thumb 480 :medium 800 :large 1200})
+(def max-bytes
+  "Largest accepted upload: 5 MiB (bytes)."
+  (* 5 1024 1024))
+(def max-side
+  "Largest accepted image width or height in pixels."
+  6000)
 
-(def urls util/media-urls)
+(def urls
+  "Alias of util/media-urls: {:thumb :medium :large} to /media/{id}-{variant}.webp paths for a photo id."
+  util/media-urls)
 
 (defprotocol MediaStore
+  "Protocol for where photo variant files live. LocalStore at launch; an object store could replace it."
   (put! [store photo-id variant ^File file] "Stores a variant file.")
   (open [store photo-id variant] "Returns a File for the variant, or nil.")
   (delete-photo! [store photo-id] "Removes every variant of the photo."))
@@ -36,7 +45,9 @@
     (doseq [v (keys variants)]
       (io/delete-file (io/file dir "public" (str photo-id "-" (name v) ".webp")) true))))
 
-(defn local-store [dir] (->LocalStore dir))
+(defn local-store
+  "A MediaStore keeping files under `dir`/public/ (served by the backend at /media/...)."
+  [dir] (->LocalStore dir))
 
 ;; ---- type detection ---------------------------------------------------------------------------
 
@@ -57,7 +68,9 @@
 
 ;; ---- processors -------------------------------------------------------------------------------
 
-(defn vips-available? []
+(defn vips-available?
+  "True when the libvips command line tool vipsthumbnail can be run on this machine."
+  []
   (try (zero? (:exit (shell/sh "vipsthumbnail" "--version"))) (catch Throwable _ false)))
 
 (defn- vips-dimensions [^File file]

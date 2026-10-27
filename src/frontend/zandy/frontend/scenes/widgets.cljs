@@ -1,6 +1,8 @@
 (ns zandy.frontend.scenes.widgets
   "Portfolio scenes for the staff-area components UploadDropzone,
-  ImportResultList and ProductImageManager, one per meaningful state."
+  ImportResultList and ProductImageManager, one per meaningful state (empty,
+  busy, results with errors, picture lists). Browser only; not reachable from
+  frontend.main."
   (:require [portfolio.replicant :refer-macros [defscene]]
             [zandy.frontend.admin.widgets :as w]
             [zandy.frontend.scenes.fixtures :as fx]))
@@ -8,7 +10,9 @@
 (defn- card [& children] (into [:div.admin-card {:style {:max-width "48rem"}}] children))
 
 ;; UploadDropzone ---------------------------------------------------------------
-(def ^:private dz {:id "dz" :label "Choose the product pictures" :hint "JPEG, PNG or WebP, up to 5 MB each." :accept "image/jpeg,image/png,image/webp"
+(def ^:private dz
+  "Base options of the UploadDropzone scenes."
+  {:id "dz" :label "Choose the product pictures" :hint "JPEG, PNG or WebP, up to 5 MB each." :accept "image/jpeg,image/png,image/webp"
                    :multiple? true :on-files [:admin/pictures-picked]})
 (defscene dropzone-empty :title "UploadDropzone / empty" (card (w/upload-dropzone dz)))
 (defscene dropzone-busy :title "UploadDropzone / uploading (disabled)" (card (w/upload-dropzone (assoc dz :busy? true))))
@@ -16,6 +20,7 @@
 
 ;; ImportResultList -------------------------------------------------------------
 (def ^:private rows
+  "Sample product-import report rows (created, updated with warning, rejected)."
   [{:line 2 :sku "ZT-SKIN-001" :status "created" :warnings [] :errors []}
    {:line 3 :sku "ZT-PERF-002" :status "updated" :warnings [{:field "openingStock" :code "ignoredForExisting"}] :errors []}
    {:line 4 :sku "ZT-BODY-003" :status "rejected" :warnings []
@@ -23,7 +28,9 @@
              {:field "name" :code "required" :message "A new product needs a name."}]}
    {:line 5 :sku "" :status "rejected" :warnings [] :errors [{:field "sku" :code "required"}]}
    {:line 6 :sku "ZT-SKIN-001" :status "rejected" :warnings [] :errors [{:field "sku" :code "duplicateSku"}]}])
-(def ^:private summary {:rows 5 :created 1 :updated 1 :rejected 3})
+(def ^:private summary
+  "Sample import report summary."
+  {:rows 5 :created 1 :updated 1 :rejected 3})
 (defscene results-empty :title "ImportResultList / empty" (card (w/import-result-list {:heading "Check result" :items []})))
 (defscene results-csv-dry :title "ImportResultList / CSV check with errors and warnings"
   (card (w/import-result-list {:heading "Check result: nothing has been changed yet" :summary (w/summary-text summary true) :items (w/csv-row-items rows true)})))
@@ -38,8 +45,12 @@
                                                         {:filename "scan.tiff" :status "rejected" :error {:code "unsupportedMediaType"}}])})))
 
 ;; ProductImageManager ---------------------------------------------------------------
-(defn- manager [m] (card (w/product-image-manager m)))
-(def ^:private three [(fx/img 1) (fx/img 2) (fx/img 3)])
+(defn- manager
+  "Base arguments of the ProductImageManager scenes."
+  [m] (card (w/product-image-manager m)))
+(def ^:private three
+  "Three sample pictures for the manager scenes."
+  [(fx/img 1) (fx/img 2) (fx/img 3)])
 (defscene manager-empty :title "ProductImageManager / empty" (manager {:images [] :saved-images []}))
 (defscene manager-empty-error :title "ProductImageManager / empty, publish blocked" (manager {:images [] :saved-images [] :error "A product needs at least one picture before it can be published."}))
 (defscene manager-loaded :title "ProductImageManager / three pictures" (manager {:images three :saved-images three}))

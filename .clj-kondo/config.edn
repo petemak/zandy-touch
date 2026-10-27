@@ -1,5 +1,6 @@
 {:linters
- {:discouraged-namespace
+ {:missing-docstring {:level :warning}
+  :discouraged-namespace
   {reagent.core       {:message "Use Replicant"}
    re-frame.core      {:message "Use Replicant; handlers are data"}
    rum.core           {:message "Use Replicant"}

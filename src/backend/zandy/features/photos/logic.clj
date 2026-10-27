@@ -1,10 +1,13 @@
 (ns zandy.features.photos.logic
-  "Pure rules for picture file names (contract 8.2): `<SKU>[-<1..6>].<ext>`, SKU matched case-insensitively,
+  "Photos slice, logic role: pure rules for picture file names (contract 8.2): `<SKU>[-<1..6>].<ext>`, SKU matched case-insensitively,
   longest SKU wins."
   (:require [clojure.string :as str]))
 
-(def unknown-sku-message "No product has a SKU at the start of this file name.")
+(def unknown-sku-message
+  "Message returned when no known SKU starts the file name."
+  "No product has a SKU at the start of this file name.")
 (def bad-suffix-message
+  "Message returned when a SKU matches but what follows it is not -1 to -6."
   "After the SKU the file name may only have -1 to -6 (the picture position), for example ZT-SKIN-001-2.jpg.")
 
 (defn base-name
@@ -27,8 +30,10 @@
                    :when (str/starts-with? s sku)
                    :let [rest* (subs s (count sku))
                          [_ pos] (re-matches #"(?:-([1-6]))?" rest*)]
+                   ;; Only nothing or -1..-6 may follow the SKU, so ZT-SKIN-0011.jpg does not attach to ZT-SKIN-001. The number after the dash is the 1-based picture slot.
                    :when (re-matches #"(?:-[1-6])?" rest*)]
                {:sku sku :position (some-> pos parse-long)})]
+    ;; Longest SKU first: with SKUs AB and AB-1 on file, "AB-1.jpg" belongs to AB-1 rather than to slot 1 of AB.
     (if-let [best (first (sort-by (comp - count :sku) fits))]
       best
       {:error {:code "unknownSku"

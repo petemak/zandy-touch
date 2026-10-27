@@ -1,10 +1,16 @@
 (ns zandy.shared.pages.info
-  "About, contact, delivery, legal, unsubscribe and error pages."
+  "Information pages: About (P9), Contact (P10), Delivery and payment (P11),
+  legal pages (P12 to P14 and P17), Unsubscribe (P15) and the error pages
+  (P16: not found and temporarily unavailable). Shared views (.cljc), pure
+  functions of page state returning hiccup."
   (:require [zandy.shared.format :as fmt]
             [zandy.shared.ui.core :as ui]
             [zandy.shared.ui.policy :as policy]))
 
-(defn about [{:keys [site]}]
+(defn about
+  "P9 About. Argument: page state; uses (:shopAddress :site). Renders the h1,
+  story and values text, the shop photo and a Contact link. Returns hiccup."
+  [{:keys [site]}]
   [:div.container
    [:h1.page-title "About Zandy Touch"]
    [:div.two-col
@@ -28,7 +34,13 @@
       [:p "Contact us for the shop address."])
     (ui/link-button "/contact" {:variant :secondary} "Contact us")]])
 
-(defn contact-form [form]
+(defn contact-form
+  "ContactForm component of P10. Argument: the :contact form state {:values
+  {:name :phone :email :message} :errors {same keys, plus :form} :status
+  :idle|:submitting|:done}. Renders the fields, an error summary and notice,
+  and a thank-you notice when :done. Submit dispatches [:contact/submit];
+  fields dispatch [:form/input :contact key value]. Returns hiccup."
+  [form]
   (let [{:keys [values errors status]} form]
     (if (= :done status)
       (ui/notice {:kind :success :live? true}
@@ -55,7 +67,11 @@
        (ui/button {:type "submit" :disabled? (= :submitting status)}
                   (if (= :submitting status) "Sending" "Send message"))])))
 
-(defn contact [{:keys [site forms]}]
+(defn contact
+  "P10 Contact. Argument: page state; uses :site ({:phone :whatsapp :email
+  :shopAddress :openingHours}) and (:contact :forms). Renders the h1, contact
+  details and the ContactForm. Returns hiccup."
+  [{:keys [site forms]}]
   (let [{:keys [phone whatsapp email shopAddress openingHours]} site]
     [:div.container
      [:h1.page-title "Contact us"]
@@ -74,7 +90,12 @@
        [:h2#message-title "Send us a message"]
        (contact-form (:contact forms))]]]))
 
-(defn delivery [{:keys [page site]}]
+(defn delivery
+  "P11 Delivery and payment. Argument: page state; (:data :page) is the GET
+  /api/delivery-areas body ({:countries [{:cities [...]}] :allowOtherCity
+  bool}), plus :site for WhatsApp. Renders how delivery and payment work and
+  the city list (or a \"contact us\" line when empty). Returns hiccup."
+  [{:keys [page site]}]
   (let [areas (:data page)
         cities (get-in areas [:countries 0 :cities])]
     [:div.container
@@ -98,11 +119,19 @@
       [:p "For an order, please use the webshop. We are happy to send you a link to any product."]
       (ui/link-button "/shop" {} "Shop now")]]))
 
-(defn legal [{:keys [page]}]
+(defn legal
+  "P12 to P14 and P17 legal pages. Argument: page state; (:data :page) is the
+  GET /api/policies/{type} body. Renders the PolicyDocument. Returns hiccup."
+  [{:keys [page]}]
   [:div.container.narrow
    (policy/policy-document (:data page))])
 
-(defn unsubscribe [{:keys [route forms]}]
+(defn unsubscribe
+  "P15 Unsubscribe. Argument: page state; the token comes from the route query
+  (:token), the form from (:unsubscribe :forms). States: missing token
+  (warning), ready (button dispatching [:unsubscribe/submit]), submitting,
+  error, done. Returns hiccup."
+  [{:keys [route forms]}]
   (let [form (:unsubscribe forms)
         token (get-in route [:query :token])]
     [:div.container.narrow
@@ -120,7 +149,11 @@
         (when (:form (:errors form)) (ui/notice {:kind :error :live? true} (:form (:errors form))))
         (ui/button {:disabled? (= :submitting (:status form)) :on-click [[:unsubscribe/submit]]} "Unsubscribe me")])]))
 
-(defn not-found [{:keys [site]}]
+(defn not-found
+  "P16 Not found. Argument: page state (:site for WhatsApp). Renders the h1, a
+  search box and the category chips. Returns hiccup; the HTTP status 404 is
+  set by the server, not here."
+  [{:keys [site]}]
   [:div.container.narrow
    [:h1.page-title "We could not find that page"]
    [:p "The page may have moved, or the product is no longer available."]
@@ -137,7 +170,11 @@
      [:p (ui/external-link (ui/whatsapp-href (:whatsapp site) "Hello, I am looking for a product.")
                            {:class "text-link" :rel "noopener"} "Ask us on WhatsApp")])])
 
-(defn unavailable [{:keys [site]}]
+(defn unavailable
+  "P16 error state: the shop could not load its data. Argument: page state
+  (:site phone, with the shop number as a fallback). Renders the calm message
+  and a phone link. Returns hiccup; the server sends it with HTTP 503."
+  [{:keys [site]}]
   (let [phone (or (:phone site) "+256706105779")]
     [:div.container.narrow
      [:h1.page-title "We are having trouble loading the shop"]

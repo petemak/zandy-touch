@@ -1,6 +1,13 @@
 (ns zandy.frontend.admin.core
-  "Staff area views A1 to A13. Client-rendered only. All views are pure
-  functions of the state; handlers are data."
+  "Staff area views A1 to A13 (design-spec.md section 5; architecture.md
+  section 2.4, `frontend.admin.core`). Browser only (ClojureScript): the
+  server sends just the document shell for admin routes. All views are pure
+  functions of the state returning hiccup; handlers are action vectors handled
+  by frontend.admin.state. Includes the AdminShell (top bar, role-aware menu,
+  \"How do I...?\" link on each page) and the pages: A1 sign in, A2 forgot
+  password, A3 reset password, A4 orders list, A5 order detail, A6 products
+  list, A7/A8 new and edit product, A9 bulk import, A10 inbox, A11 my account,
+  A12 staff (owner only) and A13 help."
   (:require [clojure.string :as str]
             [zandy.frontend.admin.help :as help]
             [zandy.frontend.admin.state :as admin-state]
@@ -13,9 +20,17 @@
 ;; ---------------------------------------------------------------------------
 ;; Helpers
 
-(defn- data [state k] (get-in state [:admin :data k]))
-(defn- forms [state id] (get-in state [:forms id]))
-(defn- admin-ui [state] (get-in state [:admin :ui]))
+(defn- data
+  "The loaded data entry {:status :loading|:ok|:error :body ...} for key `k` of
+  the current admin page."
+  [state k] (get-in state [:admin :data k]))
+(defn- forms
+  "Form state {:values :errors :status} for form `id`."
+  [state id] (get-in state [:forms id]))
+(defn- admin-ui
+  "Admin UI-only state: :notice, :conflict, :dialog, :temp-password,
+  :restoring, :restore-rejected."
+  [state] (get-in state [:admin :ui]))
 
 (defn- with-data
   "Render `f` with the loaded body, or a loading/error notice."
@@ -26,9 +41,15 @@
                       (ui/button {:variant :secondary :on-click [[:admin/reload]]} "Try again"))
     (ui/spinner-text "Loading")))
 
-(defn- link-q [path query] (routes/with-query path (into {} (remove (comp nil? val)) query)))
+(defn- link-q
+  "`path` with the non-nil entries of `query` as a query string."
+  [path query] (routes/with-query path (into {} (remove (comp nil? val)) query)))
 
-(defn- pager [path query {:keys [page pageSize totalItems]}]
+(defn- pager
+  "Previous / Next links with \"Page n of m\" for a paged API response {:page
+  :pageSize :totalItems}; nil when everything fits on one page. `query` is
+  kept in the links."
+  [path query {:keys [page pageSize totalItems]}]
   (when (and page (> totalItems pageSize))
     (let [last-page (long (Math/ceil (/ totalItems pageSize)))]
       [:nav.pagination {:aria-label "Pages"}
@@ -36,21 +57,32 @@
        [:span (str "Page " page " of " last-page)]
        (when (< page last-page) (ui/link (link-q path (assoc query :page (inc page))) {:class ["button" "button--secondary"]} "Next"))])))
 
-(defn- notice-bar [state]
+(defn- notice-bar
+  "Success notice and version-conflict banner (ConflictBanner) at the top of a
+  page, each with a Dismiss button."
+  [state]
   (let [{:keys [notice conflict]} (admin-ui state)]
     [:div
      (when notice [:div (ui/notice {:kind :success :live? true} [:span notice " "] (ui/button {:variant :secondary :on-click [[:admin/dismiss-notice]]} "Dismiss"))])
      (when conflict [:div (ui/notice {:kind :warning :live? true} [:span conflict " "] (ui/button {:variant :secondary :on-click [[:admin/dismiss-conflict]]} "Dismiss"))])]))
 
-(defn- submit-btn [status label busy-label]
+(defn- submit-btn
+  "Submit button that shows `busy-label` and is disabled while the form status
+  is :submitting."
+  [status label busy-label]
   (ui/button {:type "submit" :disabled? (= :submitting status)} (if (= :submitting status) busy-label label)))
 
-(defn- ugx [n] (or (fmt/ugx n) "Not set"))
+(defn- ugx
+  "UGX amount, or \"Not set\" for nil."
+  [n] (or (fmt/ugx n) "Not set"))
 
 ;; ---------------------------------------------------------------------------
 ;; Shell
 
 (def nav-items
+  "Admin menu entries [route-name path label active-route-names role]; entries
+  with :owner as the role are shown only to the owner. The menu is a
+  convenience; the server enforces access."
   [[:admin-orders "/admin" "Orders" #{:admin-orders :admin-order}]
    [:admin-products "/admin/products" "Products" #{:admin-products :admin-new-product :admin-product}]
    [:admin-product-import "/admin/product-import" "Import" #{:admin-product-import}]
@@ -59,9 +91,14 @@
    [:admin-account "/admin/account" "My account" #{:admin-account}]
    [:admin-help "/admin/help" "Help" #{:admin-help :admin-help-topic}]])
 
+;; The "How do I...?" link comes from help/how-do-i, which only returns a link
+;; for a topic the signed-in role may read (UI convenience; the server
+;; enforces the real access rules).
 (defn- page-title
-  "The page's one h1 with the small \"How do I...?\" link beside it. No link while
-  a temporary password must be changed (every other page redirects away then)."
+  "The page's one h1 with the small \"How do I...?\" link (design-spec.md section
+  3, AdminShell) next to it. Arguments: state and the title children. No link
+  while a temporary password must be changed, because every other page
+  redirects away then. Returns hiccup."
   [state & children]
   (let [user (get-in state [:admin :session :user])]
     [:div.page-head
@@ -69,7 +106,11 @@
      (when-not (:mustChangePassword user)
        (help/how-do-i (get-in state [:route :name]) (:role user)))]))
 
-(defn- shell [state content]
+(defn- shell
+  "AdminShell. Wraps `content` (hiccup) with the skip link, top bar (logo, name
+  and role, Sign out) and the menu. The menu is hidden while a temporary
+  password must be changed."
+  [state content]
   (let [user (get-in state [:admin :session :user])
         current (get-in state [:route :name])
         locked? (:mustChangePassword user)]
@@ -104,7 +145,10 @@
 ;; ---------------------------------------------------------------------------
 ;; A1 to A3, A11
 
-(defn- login-page [state]
+(defn- login-page
+  "A1 Staff sign in: email and password form, form-level error, link to A2.
+  States: idle, submitting, error."
+  [state]
   (let [f (forms state :login)]
     [:main#main.container {:tabindex "-1"}
      [:div.admin-card.login-card
@@ -119,7 +163,10 @@
        (submit-btn (:status f) "Sign in" "Signing in")]
       [:p (ui/link "/admin/forgot-password" {:class "text-link"} "Forgot password?")]]]))
 
-(defn- forgot-page [state]
+(defn- forgot-page
+  "A2 Forgot password: email form; after submit always the same \"if that
+  address belongs to the owner\" message."
+  [state]
   (let [f (forms state :forgot)]
     [:main#main.container {:tabindex "-1"}
      [:div.admin-card.login-card
@@ -133,7 +180,10 @@
          (submit-btn (:status f) "Send reset link" "Sending")])
       [:p (ui/link "/admin/login" {:class "text-link"} "Back to sign in")]]]))
 
-(defn- reset-page [state]
+(defn- reset-page
+  "A3 Choose a new password: reads the token from the URL; states idle,
+  submitting, done, invalid link."
+  [state]
   (let [f (forms state :reset)]
     [:main#main.container {:tabindex "-1"}
      [:div.admin-card.login-card
@@ -147,7 +197,10 @@
                          :on-input [:form/input :reset :password [:event/target.value]]})
          (submit-btn (:status f) "Change password" "Saving")])]]))
 
-(defn- account-page [state]
+(defn- account-page
+  "A11 My account: name, email and role, the temporary-password warning, and
+  the change-password form."
+  [state]
   (let [user (get-in state [:admin :session :user])
         f (forms state :password)]
     (shell state
@@ -174,9 +227,14 @@
 ;; ---------------------------------------------------------------------------
 ;; A4 Orders list
 
-(def order-tabs [[nil "All"] ["placed" "New"] ["confirmed" "Confirmed"] ["approvedForDelivery" "Out for delivery"] ["delivered" "Delivered"] ["cancelled" "Cancelled"]])
+(def order-tabs
+  "Status filter tabs of A4 as [status-or-nil label]."
+  [[nil "All"] ["placed" "New"] ["confirmed" "Confirmed"] ["approvedForDelivery" "Out for delivery"] ["delivered" "Delivered"] ["cancelled" "Cancelled"]])
 
-(defn- orders-page [state]
+(defn- orders-page
+  "A4 Orders list: status tabs with counts, search, a table of orders (cards on
+  phones) and the pager. Loads from GET /api/admin/orders."
+  [state]
   (let [query (get-in state [:route :query])
         d (data state :orders)]
     (shell state
@@ -221,7 +279,11 @@
 ;; ---------------------------------------------------------------------------
 ;; A5 Order detail
 
-(defn- order-dialog [state order]
+(defn- order-dialog
+  "Status-change dialog on A5 (confirm, approve for delivery, mark delivered
+  with payment method, cancel with reason). Returns nil when no dialog is
+  open."
+  [state order]
   (let [{:keys [type target]} (:dialog (admin-ui state))
         f (forms state :dialog)
         v (:values f)
@@ -248,7 +310,11 @@
                 (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Back")
                 (ui/button {:type "submit" :disabled? (= :submitting (:status f))} (if (= "cancelled" target) "Cancel order" "Confirm"))]]))))
 
-(defn- order-page [state]
+(defn- order-page
+  "A5 Order detail: customer, items, delivery fee and staff note form (saved
+  with the order :version), status history, agreement acceptance and the
+  action buttons for the next allowed statuses."
+  [state]
   (shell state
          (with-data (data state :order)
            (fn [{:keys [order agreementAcceptance history]}]
@@ -349,28 +415,39 @@
                  (ui/link (str "/admin/products/" id) {:class ["button" "button--secondary"]} "Edit product")
                  (ui/button {:variant :secondary :on-click [[:admin/restore-dismiss]]} "Dismiss")])]))
 
-(defn- restore-button [state p]
+(defn- restore-button
+  "Restore button for an archived product (A6 Archived tab, A8); disabled while
+  that product is being restored."
+  [state p]
   (ui/button {:disabled? (= (:id p) (:restoring (admin-ui state)))
               :on-click [[:admin/restore (:id p) (:name p) "published"]]}
              (if (= (:id p) (:restoring (admin-ui state))) "Restoring" "Restore")))
 
-(defn- stock-cell [p]
+(defn- stock-cell
+  "Stock count with a Sold out or Low stock badge, for the A6 table."
+  [p]
   (let [n (:stockQuantity p)]
     [:span
      [:span {:class (cond (zero? n) "stock-zero" (:lowStock p) "stock-low")} n] " "
      (cond (zero? n) (ui/badge :sold-out) (:lowStock p) (ui/badge :low-stock))]))
 
 (def archive-dialog-text
-  "One text for the Remove confirm box on the products list and the product page."
+  "Explanation shown in the archive confirm dialog (A6 and A8)."
   "This archives the product. It leaves the shop, search and sitemap. Orders and stock history are kept. You can bring it back later from the Archived tab with Restore.")
 
-(defn- archive-dialog [dlg]
+(defn- archive-dialog
+  "Confirm dialog for archiving the product in `dlg` ({:id :name})."
+  [dlg]
   (dialog {:title (str "Remove " (:name dlg) "?")}
           [:p archive-dialog-text]
           [:div.dialog__actions (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
            (ui/button {:on-click [[:admin/archive (:id dlg)]]} "Archive product")]))
 
-(defn- stock-dialog [state product-id current name]
+(defn- stock-dialog
+  "StockAdjustDialog. Arguments: state, `product-id`, the `current` quantity
+  (sent back as expectedQuantity) and the product `name`. Modes: add, remove,
+  set to counted number; reason select; note."
+  [state product-id current name]
   (let [f (forms state :dialog) v (:values f) errs (:errors f)]
     (dialog {:title (str "Adjust stock: " name)}
             [:form {:novalidate true :on {:submit [[:dom/prevent-default] [:admin/stock-submit product-id current]]}}
@@ -389,7 +466,11 @@
               (ui/button {:variant :secondary :on-click [[:admin/dialog-close]]} "Cancel")
               (ui/button {:type "submit" :disabled? (= :submitting (:status f))} "Confirm")]])))
 
-(defn- products-page [state]
+(defn- products-page
+  "A6 Products list: status and stock filters, search, table with stock cells,
+  Restore for archived items, archive confirm dialog and pager. Loads from GET
+  /api/admin/products."
+  [state]
   (let [query (get-in state [:route :query])
         d (data state :products)
         dlg (:dialog (admin-ui state))]
@@ -459,7 +540,12 @@
          :upload {:status (:status pi) :items (:items pi)}
          :save (:save pi)})])))
 
-(defn- product-form [state product-id]
+(defn- product-form
+  "ProductForm for A7 (new, `product-id` nil) and A8 (edit): fields, category
+  select (names from GET /api/categories, the fixed six until loaded), status,
+  featured, own brand, opening stock (new only), error summary. Submits
+  [:admin/product-save product-id]."
+  [state product-id]
   (let [f (forms state :product)
         v (:values f)
         errs (:errors f)
@@ -513,7 +599,10 @@
       (when (and product-id (= "published" (:status v)))
         (ui/link-button (str "/products/" (get-in state [:admin :data :product :body :slug])) {:variant :secondary} "View on shop"))]]))
 
-(defn- stock-panel [state p]
+(defn- stock-panel
+  "StockPanel on A8: current count with badge, Adjust stock button and the
+  StockMovementList."
+  [state p]
   (let [movements (get-in (data state :movements) [:body :items])
         dlg (:dialog (admin-ui state))]
     [:section.admin-card {:aria-labelledby "stock-title"}
@@ -524,7 +613,9 @@
      (widgets/stock-movement-list movements)
      (when (= :stock (:type dlg)) (stock-dialog state (:id dlg) (:current dlg) (:name dlg)))]))
 
-(defn- new-product-page [state]
+(defn- new-product-page
+  "A7 New product page."
+  [state]
   (shell state
          [:div
           (ui/breadcrumb [["Products" "/admin/products"] ["New product" nil]])
@@ -541,7 +632,9 @@
               (restore-button state p))
    (restore-rejected-notice state)])
 
-(defn- edit-product-page [state]
+(defn- edit-product-page
+  "A8 Edit product page, including the archived state with Restore."
+  [state]
   (shell state
          (with-data (data state :product)
            (fn [p]
@@ -565,9 +658,15 @@
 ;; ---------------------------------------------------------------------------
 ;; A9 Bulk product import
 
-(defn- kilobytes [n] (str (max 1 (long (Math/ceil (/ n 1024)))) " KB"))
+(defn- kilobytes
+  "Size text such as \"12 KB\" (at least 1 KB)."
+  [n] (str (max 1 (long (Math/ceil (/ n 1024)))) " KB"))
 
-(defn- csv-step [state]
+(defn- csv-step
+  "A9 step 1: template download, CSV UploadDropzone, dry run and real import
+  buttons, and the ImportResultList. Buttons: Check file (dry run) first,
+  Import after a dry run that would change something."
+  [state]
   (let [f (forms state :import-csv)
         {:keys [dry real]} f
         report (or (:report real) (:report dry))
@@ -613,7 +712,10 @@
          :summary (widgets/summary-text (:summary report) (not real?))
          :items (widgets/csv-row-items (:rows report) (not real?))}))]))
 
-(defn- pictures-step [state]
+(defn- pictures-step
+  "A9 step 2: UploadDropzone for pictures named after SKUs, batch progress bar,
+  per-file ImportResultList and retry for files that did not reach the server."
+  [state]
   (let [f (forms state :import-pictures)
         {:keys [queue results index total]} f
         uploading? (= :uploading (:status f))
@@ -651,7 +753,10 @@
         (when (and (seq results) (not uploading?))
           (ui/button {:variant :secondary :on-click [[:admin/pictures-clear]]} "Clear results"))])]))
 
-(defn- publish-outcome [{:keys [status error results]}]
+(defn- publish-outcome
+  "Outcome of \"Publish complete products\" in step 3: error, or counts of
+  published products and the ones that stay drafts with reasons."
+  [{:keys [status error results]}]
   (case status
     :error (ui/notice {:kind :error :live? true} error)
     :done (let [ok (filter #(= "published" (:status %)) results)
@@ -666,7 +771,10 @@
                                            (str/join ", " (for [e (:errors r)] (get widgets/code-text (:code e) (:code e)))))])]])))
     nil))
 
-(defn- drafts-step [state]
+(defn- drafts-step
+  "A9 step 3: the drafts (from this import, or all) with what each still lacks,
+  and Publish complete products."
+  [state]
   (let [review (forms state :import-review)
         imported? (seq (:imported-ids review))
         all? (= :all (:scope review))]
@@ -711,7 +819,9 @@
                         (if running? "Publishing" (str "Publish all complete drafts (" (count complete) ")")))
              (ui/link-button "/admin/products" {:variant :secondary} "Go to products")]])))]))
 
-(defn- import-page [state]
+(defn- import-page
+  "A9 Bulk product import: the three steps in order."
+  [state]
   (shell state
          [:div
           (page-title state "Import products")
@@ -723,7 +833,9 @@
 ;; ---------------------------------------------------------------------------
 ;; A10 Inbox
 
-(defn- inbox-page [state]
+(defn- inbox-page
+  "A10 Inbox: Messages and Subscribers tabs (the tab is in the URL query)."
+  [state]
   (let [tab (or (get-in state [:route :query :tab]) "messages")]
     (shell state
            [:div
@@ -755,7 +867,10 @@
 ;; ---------------------------------------------------------------------------
 ;; A12 Staff
 
-(defn- staff-page [state]
+(defn- staff-page
+  "A12 Staff accounts (owner only; others see an error notice): list, add form,
+  temporary password notice and reset and deactivate dialogs."
+  [state]
   (let [f (forms state :staff)
         tp (:temp-password (admin-ui state))
         dlg (:dialog (admin-ui state))]
@@ -806,7 +921,10 @@
 ;; ---------------------------------------------------------------------------
 ;; A13 Help
 
-(defn- help-page [state]
+(defn- help-page
+  "A13 Help inside the shell: the topic list or one topic, chosen by the route;
+  the role comes from the session."
+  [state]
   (let [role (admin-state/role state)]
     (shell state
            (case (get-in state [:route :name])
@@ -815,7 +933,13 @@
 
 ;; ---------------------------------------------------------------------------
 
-(defn view [state]
+(defn view
+  "Top-level admin view. Argument: page state with :route and (:admin
+  :session). Returns hiccup for the matched admin page: the public sign-in
+  pages A1 to A3 render without a session; any other page renders a \"Checking
+  your session\" line until the session is known, then the page inside the
+  shell. Pure."
+  [state]
   (let [session (get-in state [:admin :session])
         route-name (get-in state [:route :name])
         ]

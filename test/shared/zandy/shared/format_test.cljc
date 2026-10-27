@@ -1,4 +1,6 @@
 (ns zandy.shared.format-test
+  "Tests of shared.format: UGX and phone formatting, Kampala (+3) dates and
+  labels. Runs on the JVM and in the Node test build."
   (:require [clojure.test :refer [deftest is testing]]
             [zandy.shared.format :as fmt]))
 

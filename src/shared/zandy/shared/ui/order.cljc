@@ -1,12 +1,18 @@
 (ns zandy.shared.ui.order
-  "Cart lines, order summary, status timeline."
+  "Order components: CartLine, OrderSummary, StatusTimeline and the line
+  notices for stock and price problems. Used by the cart (P5), checkout (P6),
+  order placed (P7) and tracking (P8). Pure hiccup functions, shared code
+  (.cljc)."
   (:require [zandy.shared.format :as fmt]
             [zandy.shared.routes :as routes]
             [zandy.shared.ui.core :as ui]
             [zandy.shared.ui.product :as product]))
 
 (defn line-notice
-  "Inline text for a validation problem on a cart line."
+  "Inline text for a validation problem on a cart line. Arguments: the
+  validation line {:problem \"soldOut\"|\"unavailable\"|\"insufficientStock\"
+  :maxQuantity} and the stored item (unused). Returns hiccup, or nil when the
+  line has no problem."
   [{:keys [problem maxQuantity]} _item]
   (case problem
     "soldOut" (ui/notice {:kind :error :live? true} "Sold out, remove to continue")
@@ -15,12 +21,23 @@
                                    (str "Only " maxQuantity " available"))
     nil))
 
-(defn price-changed-notice [line item]
+(defn price-changed-notice
+  "Warning shown on a cart line when the validated unit price differs from the
+  price the customer last saw. Arguments: `line` (validation line from POST
+  /api/cart-validations, with :unitPrice) and `item` (stored cart line, with
+  :price). Returns hiccup, or nil when the prices match or either is missing."
+  [line item]
   (when (and (:unitPrice line) (:price item) (not= (:unitPrice line) (:price item)))
     (ui/notice {:kind :warning :live? true} (str "Price changed. Now " (fmt/ugx (:unitPrice line))))))
 
 (defn cart-line
-  "item is the stored cart line, vline the validation line (or nil)."
+  "CartLine. Arguments: `item` (stored cart line {:product-id :slug :name
+  :price :image :quantity}) and `vline` (validation line for the product, or
+  nil before validation). The unit price shown is the validated one when
+  known. Shows problem and price-change notices, a \"Change to n\" shortcut for
+  insufficient stock, the QuantityStepper (hidden when sold out or
+  unavailable) and Remove. Actions: [:cart/set-qty id n], [:cart/set-qty-input
+  id], [:cart/remove id]. Returns hiccup."
   [{:keys [product-id slug name price image quantity] :as item} vline]
   (let [problem (:problem vline)
         unit (or (:unitPrice vline) price)
@@ -51,8 +68,10 @@
                             (ui/price (* unit quantity)))]]))
 
 (defn order-summary
-  "Lines are {:name :quantity :unitPrice :lineTotal}. Delivery reads 'agreed'
-  until a fee is recorded."
+  "OrderSummary (cart, checkout, confirmation, tracking). Argument map: {:lines
+  (seq of {:name :quantity :unitPrice :lineTotal}) :subtotal :deliveryFee
+  :total :heading}. Delivery reads \"Agreed with you before dispatch\" until a
+  fee is recorded, and \"Free\" for 0. Returns hiccup."
   [{:keys [lines subtotal deliveryFee total heading]}]
   [:section.order-summary {:aria-labelledby "order-summary-title"}
    [:h2#order-summary-title.order-summary__title (or heading "Order summary")]
@@ -71,10 +90,14 @@
     (when (some? total)
       [:div.order-summary__total [:dt "Total"] [:dd (ui/price total)]])]])
 
-(def timeline-steps ["placed" "confirmed" "approvedForDelivery" "delivered"])
+(def timeline-steps
+  "The statuses of a normal order, in the order they happen."
+  ["placed" "confirmed" "approvedForDelivery" "delivered"])
 
 (defn status-timeline
-  "timeline: [{:status :at}]. A cancelled order replaces the remaining steps."
+  "StatusTimeline. Arguments: `timeline` (the API's [{:status :at}] list) and
+  the current `status`. A cancelled order shows the steps it reached followed
+  by \"Cancelled\". Times are shown in Kampala time. Returns hiccup."
   [timeline status]
   (let [reached (into {} (map (juxt :status :at)) timeline)
         cancelled? (= "cancelled" status)

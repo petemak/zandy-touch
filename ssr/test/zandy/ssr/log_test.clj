@@ -1,4 +1,6 @@
 (ns zandy.ssr.log-test
+  "Tests of ssr.log: one JSON object per line with time, level, service and
+  event, and no personal data. JVM only."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is]]
             [jsonista.core :as json]

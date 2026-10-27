@@ -9,6 +9,8 @@
 (def ^:private nilable-string [:maybe [:string {:min 1}]])
 
 (def Config
+  "Malli schema of the validated configuration map (resources/config.edn after Aero reads it).
+  Every limit, mail, media and site setting has a type here; extra prod-only rules live in prod-problems."
   [:map
    [:profile [:enum :dev :test :prod]]
    [:http [:map [:port pos-int?] [:host :string]]]
@@ -51,7 +53,9 @@
     (str/starts-with? (str (:uri datomic)) "datomic:mem:") (conj "DATOMIC_URI must not be in-memory in prod")))
 
 (defn validate!
-  "Returns config when valid, otherwise throws ex-info listing every problem (never values)."
+  "Validates a loaded config map against Config (and, for :prod, the extra rules).
+  Returns the config unchanged, or throws ex-info \"Invalid configuration: ...\" with {:problems [...]}.
+  The message names the offending keys and rules but never the secret values."
   [config]
   (let [explained (m/explain Config config)
         problems (cond-> []
@@ -70,6 +74,8 @@
   (let [raw (aero/read-config (io/resource "config.edn") {:profile profile})
         cfg (assoc raw :profile profile)
         cfg (cond-> cfg
+              ;; Outside prod a missing secret/owner email gets a throwaway value so dev and tests boot with no environment;
+              ;; prod fails fast in validate! instead (no secret defaults in prod).
               (and (not= :prod profile) (nil? (get-in cfg [:auth :session-hmac-secret])))
               (assoc-in [:auth :session-hmac-secret] (str (random-uuid) (random-uuid)))
               (and (not= :prod profile) (nil? (get-in cfg [:auth :owner-email])))
@@ -77,6 +83,7 @@
     (validate! cfg)))
 
 (defn profile-from-env
-  "ZANDY_PROFILE env var, else the zandy.profile system property, else :prod (the safe default)."
+  "The profile keyword: ZANDY_PROFILE env var, else the zandy.profile system property, else :prod.
+  Defaulting to :prod makes a misconfigured deployment fail fast rather than run with dev settings."
   []
   (keyword (or (System/getenv "ZANDY_PROFILE") (System/getProperty "zandy.profile") "prod")))

@@ -10,16 +10,20 @@
             [zandy.platform.media :as media]
             [zandy.platform.util :as util]))
 
-(defn view-opts [ctx]
+(defn view-opts
+  "Options the view functions need, from ctx: {:max-qty max quantity per cart line :low low-stock threshold :now current instant}."
+  [ctx]
   {:max-qty (get-in ctx [:config :catalog :max-quantity-per-line])
    :low (get-in ctx [:config :catalog :low-stock-threshold])
    :now (util/now ctx)})
 
+;; Datomic reports a unique-attribute clash only through the message text, so the transaction error is recognised by its message.
 (defn- unique-violation? [ex]
   (loop [e ex]
     (when e
       (or (some-> (ex-message e) (str/includes? "unique")) (recur (ex-cause e))))))
 
+;; A failed :db/cas (stale product version) surfaces as an exception whose message mentions cas-failed; walk the cause chain to find it.
 (defn- cas-failed? [ex]
   (loop [e ex]
     (when e
@@ -61,8 +65,10 @@
     (media/delete-photo! (:media-store ctx) id)))
 
 (defn create-product!
-  "Creates a product. `fields` uses the request keys (kebab-case, status as a string). A new product has no
-  pictures yet: they are added with attach-file! once it exists. Returns the product map."
+  "Creates a product. Arguments: ctx; {:user-eid acting staff user}; `fields`, the validated request body (kebab-case keys, :status a string, :category-slug, optional :sku and :stock-quantity).
+  A new product has no pictures yet: they are added with attach-file! once it exists. Slug is derived from the name and made unique; SKU is upper-cased.
+  Returns the product map (see db/all-products). Throws validationFailed (422) with codes unknownCategory, skuAlreadyInUse, unknownImage, priceRequired, imageRequired, invalid.
+  Side effect: one Datomic transaction (product plus opening stock movement)."
   [ctx {:keys [user-eid]} fields]
   (let [conn (:conn ctx)
         dbv (d/db conn)
@@ -73,6 +79,7 @@
         merged {:status (:status w) :price (:price w) :images [] :category (:category-eid w)}
         all (vec (concat problems sku-problems image-problems (logic/publish-problems merged)))]
     (when (seq all) (errors/validation-failed all))
+    ;; Slugs are made unique by suffixing -2, -3, ... against every existing slug (archived included, because the slug attribute is unique).
     (let [taken (set (d/q '[:find [?s ...] :where [_ :product/slug ?s]] dbv))
           slug (logic/unique-slug (logic/slugify (:name w)) taken)
           id (random-uuid)
@@ -87,8 +94,10 @@
       (db/product-by-id (d/db conn) id))))
 
 (defn update-product!
-  "Partial update guarded by the version. When `images` is present it is the new picture list: pictures can
-  be reordered, re-labelled or left out, and a picture left out is deleted. Returns the updated product map."
+  "Partial update guarded by the version. Arguments: ctx; {:user-eid}; product uuid; `body` (validated PATCH body with :version).
+  When :images is present it is the new picture list: pictures can be reordered, re-labelled or left out, and a picture left out is deleted (record and files).
+  Returns the updated product map. Throws notFound, versionConflict (409, stale :version) or validationFailed (422, including the publishing rule).
+  Side effects: one transaction; media file deletion after commit."
   [ctx {:keys [user-eid]} product-id body]
   (let [conn (:conn ctx)
         dbv (d/db conn)
@@ -112,10 +121,14 @@
                (cas-failed? ex) (errors/fail! :versionConflict "This product was changed by someone else. Please reload it.")
                (unique-violation? ex) (errors/validation-failed [{:field "sku" :code "skuAlreadyInUse" :message "This SKU is already used by another product."}])
                :else (throw ex))))
+      ;; Files are deleted only after the transaction committed, so a failed write never loses pictures; a crash in between leaves orphan files, which is harmless.
       (when recon (delete-media! ctx (keep :photo-id (:removed recon))))
       (db/product-by-id (d/db conn) product-id))))
 
-(defn archive-product! [ctx {:keys [user-eid]} product-id]
+(defn archive-product!
+  "Archives a product (the DELETE endpoint: products are never deleted). Arguments: ctx, {:user-eid} of the acting staff user, product uuid.
+  Already archived products are left alone. Returns nil. Throws notFound (404) or versionConflict (409). Side effect: one Datomic transaction."
+  [ctx {:keys [user-eid]} product-id]
   (let [conn (:conn ctx)
         existing (or (db/product-by-id (d/db conn) product-id) (errors/fail! :notFound "Product not found."))]
     (when-not (= :archived (:status existing))
@@ -127,7 +140,9 @@
     nil))
 
 (defn adjust-stock!
-  "Atomic stock adjustment through the :catalog/adjust-stock transaction function."
+  "Atomic stock adjustment through the :catalog/adjust-stock transaction function, which also writes the stock movement.
+  Arguments: ctx, {:user-id staff uuid}, product uuid, {:delta signed units :reason string :note :expected-quantity}. Returns the new movement's uuid.
+  Throws notFound, versionConflict (expected-quantity differs from current stock) or validationFailed (stockCannotBeNegative). Side effect: one transaction."
   [ctx {:keys [user-id]} product-id {:keys [delta reason note expected-quantity]}]
   (let [movement-id (random-uuid)
         spec (util/compact {:product-id product-id :delta delta :reason (keyword reason) :note note
@@ -138,10 +153,14 @@
 
 ;; ---- reads used elsewhere ----------------------------------------------------------------------
 
-(defn sku-exists? [ctx sku]
+(defn sku-exists?
+  "True when some product (any status) has this already-normalised SKU."
+  [ctx sku]
   (some? (db/product-by-sku (d/db (:conn ctx)) sku)))
 
-(defn published-sitemap [ctx]
+(defn published-sitemap
+  "Body of GET /api/sitemap-entries: {:products [{:slug :updated-at}] :categories [{:slug}] :generated-at} for published products only, sorted by slug. Read only."
+  [ctx]
   (let [dbv (d/db (:conn ctx))
         products (db/published-products dbv)]
     {:products (mapv (fn [p] {:slug (:slug p) :updated-at (:updated-at p)}) (sort-by :slug products))
@@ -149,7 +168,7 @@
      :generated-at (util/now ctx)}))
 
 (defn cart-info
-  "For each product id, what the cart and checkout need: name, price, stock, publication and image."
+  "For each product id in `ids`, what the cart and checkout need. Returns a map id -> {:id :slug :name :price :stock-quantity :published? :availability :max-quantity :image}; unknown ids are absent. Read only."
   [ctx ids]
   (let [opts (view-opts ctx)]
     (into {}
@@ -164,11 +183,13 @@
 ;; ---- product pictures ----------------------------------------------------------------------------
 
 (defn get-product
-  "The product map by id, or nil."
+  "The product map by uuid (any status), or nil. Reads the current database value."
   [ctx id]
   (db/product-by-id (d/db (:conn ctx)) id))
 
-(defn product-by-sku [ctx sku]
+(defn product-by-sku
+  "The product map with this SKU (normalised to upper case first), or nil. Used by the photos slice for file-name matching."
+  [ctx sku]
   (db/product-by-sku (d/db (:conn ctx)) (logic/normalize-sku sku)))
 
 (defn skus
@@ -176,26 +197,33 @@
   [ctx]
   (into {} (keep (fn [p] (when (:sku p) [(:sku p) (:id p)]))) (db/all-products (d/db (:conn ctx)))))
 
-(defn categories [ctx]
+(defn categories
+  "All categories as {:id :slug :name :description :sort-order}, in display order."
+  [ctx]
   (db/categories (d/db (:conn ctx))))
 
 (defn attach-file!
   "Processes an uploaded image file and stores it on the product: appended, or in the 1-based `position`
   slot (replacing the picture there, which is deleted). The photo record is created in the same transaction
-  that links it to the product, so a picture never exists without a product. `opts`: :user-eid :filename
-  :position :seed?. Returns {:status :attached :position n :product-id id :image {:id :alt :urls}} or
-  {:status :rejected :error {:code :message}}; per-file problems never throw. Throws notFound for an unknown product."
+  that links it to the product, so a picture never exists without a product.
+  Arguments: ctx; opts {:user-eid :filename (original name) :position (1-based or nil) :seed? boolean}; product uuid; `file`, a java.io.File.
+  Returns {:status :attached :position n :product-id id :image {:id :alt :urls}} or
+  {:status :rejected :error {:code :message}} (tooManyImages, fileTooLarge, unsupportedMediaType, dimensionsTooLarge, unreadableImage);
+  per-file problems never throw. Throws notFound (404) for an unknown product and versionConflict (409) after repeated write races.
+  Side effects: writes the WebP variants to the media store, one Datomic transaction, deletes a replaced picture's files; on failure the new files are removed."
   [ctx {:keys [user-eid filename position seed?]} product-id ^java.io.File file]
   (let [conn (:conn ctx)
         rejected (fn [code message] {:status :rejected :error {:code code :message message}})
         too-many (fn [] (rejected "tooManyImages" "This product already has 6 pictures."))
         product (or (db/product-by-id (d/db conn) product-id) (errors/fail! :notFound "Product not found."))]
+    ;; Check the slot before spending time on image processing.
     (if (:error (logic/plan-slot (:images product) position))
       (too-many)
       (let [photo-id (random-uuid)
             result (media/process-upload! (:media-store ctx) (:image-processor ctx) photo-id file)]
         (if-let [ok (:ok result)]
           (loop [attempt 0]
+            ;; The product is re-read inside the loop: another upload or edit may have changed its version or filled the slot meanwhile, so plan again and retry the CAS up to 5 times.
             (let [product (db/product-by-id (d/db conn) product-id)
                   plan (logic/plan-slot (:images product) position)]
               (if (:error plan)
@@ -222,9 +250,9 @@
     (if (seq details) details [{:field nil :code (name code) :message message}])))
 
 (defn publish-product!
-  "Publishes one product under the publishing rule. Returns {:product-id id :status :published} or
-  {:product-id id :status :rejected :errors [{:field :code :message}]}. An already published product is
-  left alone."
+  "Publishes one product under the publishing rule (price, a picture and a category are required). Arguments: ctx, {:user-eid}, product uuid.
+  Returns {:product-id id :status :published} or {:product-id id :status :rejected :errors [{:field :code :message}]}. An already published product is left alone; a missing product is rejected with code notFound.
+  Side effect: an update-product! transaction (retried on version conflicts)."
   [ctx {:keys [user-eid]} product-id]
   (loop [attempt 0]
     (let [p (db/product-by-id (d/db (:conn ctx)) product-id)]
@@ -236,6 +264,7 @@
         (let [r (try (update-product! ctx {:user-eid user-eid} product-id {:version (:version p) :status "published"})
                      :done
                      (catch Throwable ex
+                       ;; Bulk publication retries a version conflict a few times (another staff user may be editing) before reporting it.
                        (if (and (< attempt 3) (= :versionConflict (:code (errors/error-data ex))))
                          :retry
                          (if-let [details (error-details ex)] details (throw ex)))))]
@@ -245,7 +274,7 @@
             :else {:product-id product-id :status :rejected :errors r}))))))
 
 (defn admin-product-view
-  "The staff detail view of a product (shape of GET /api/admin/products/{id})."
+  "The staff detail view of a product (shape of GET /api/admin/products/{id}) from a product map, with the updated-by user summary resolved through ctx. Read only."
   [ctx p]
   (let [by ((:user-summaries ctx) [(:updated-by-eid p)])]
     (logic/admin-detail p (get by (:updated-by-eid p)) (view-opts ctx))))

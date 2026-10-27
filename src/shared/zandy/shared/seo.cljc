@@ -1,15 +1,23 @@
 (ns zandy.shared.seo
-  "Head tags per page: title, description, canonical, Open Graph, robots and
-  one JSON-LD block. Pure; the same data feeds the server-rendered <head> and
-  the browser's head updates after client navigation."
+  "Head tags for every page: title, description, canonical, robots, Open Graph
+  and one JSON-LD block (schema.org Store, plus Product on product pages).
+  Pure and shared (.cljc): the frontend server puts the result into the first
+  HTML response (via shared.document) so crawlers and link previews do not
+  depend on JavaScript, and the browser reuses the same data to update the
+  head after client navigation."
   (:require [clojure.string :as str]
             [zandy.shared.format :as fmt]
             [zandy.shared.json :as json]
             [zandy.shared.routes :as routes]))
 
-(def default-og-image "/static/assets/share/og-default.jpg")
+(def default-og-image
+  "Path of the share image used when a page has none of its own."
+  "/static/assets/share/og-default.jpg")
 
-(defn- cat-name [state slug]
+(defn- cat-name
+  "Display name of the category `slug` among the page's loaded categories,
+  falling back to a title made from the slug."
+  [state slug]
   (or (some #(when (= slug (:slug %)) (:name %)) (get-in state [:page :data :categories]))
       (fmt/slug-title slug)))
 
@@ -18,6 +26,9 @@
 
 (defn- q-of [state] (get-in state [:route :query :q]))
 
+;; Why noindex on variants: filtered, searched, sorted or paginated listings
+;; would duplicate the base listing in search results. Their canonical link
+;; still points at the base page path.
 (defn- variant?
   "Filtered, searched, sorted or paginated listing."
   [state]
@@ -29,19 +40,29 @@
 (defn- day-index [d]
   (first (keep-indexed (fn [i x] (when (= x d) i)) weekdays)))
 
-(defn- day-range [days]
+(defn- day-range
+  "Opening-hours text such as \"Monday to Friday\" or \"Sunday\" as a vector of
+  weekday names for schema.org, or nil when the text is not understood."
+  [days]
   (let [[a b] (map str/trim (str/split (or days "") #" to "))
         ia (day-index a)
         ib (if b (day-index b) ia)]
     (when (and ia ib (>= ib ia))
       (subvec weekdays ia (inc ib)))))
 
-(defn- hours-spec [hours]
+(defn- hours-spec
+  "schema.org OpeningHoursSpecification maps for the site-info :openingHours
+  entries ({:days :opens :closes}); entries with unreadable day text are left
+  out."
+  [hours]
   (vec (keep (fn [{:keys [days opens closes]}]
                (when-let [d (day-range days)]
                  {"@type" "OpeningHoursSpecification" "dayOfWeek" d "opens" opens "closes" closes}))
              hours)))
 
+;; The Store block comes from site-info (real business details from the API),
+;; so it is the same on every page; product pages add a Product with an Offer
+;; that points back to it by @id.
 (defn- store-ld [site base]
   (let [{:keys [businessName tagline phone email shopAddress openingHours social]} site
         same-as (vec (remove str/blank? [(:tiktok social) (:facebook social) (:instagram social)]))]
@@ -62,7 +83,11 @@
       (seq openingHours) (assoc "openingHoursSpecification" (hours-spec openingHours))
       (seq same-as) (assoc "sameAs" same-as))))
 
-(defn- product-ld [p base]
+(defn- product-ld
+  "schema.org Product (with an Offer pointing back at the Store by @id) for the
+  product detail map `p`; `base` is the site origin. Availability maps
+  \"available\" to InStock and anything else to OutOfStock."
+  [p base]
   (let [url (str base (routes/path-for :product {:slug (:slug p)}))
         imgs (vec (keep #(some->> (get-in % [:urls :large]) (str base)) (:images p)))]
     (cond-> {"@type" "Product"
@@ -82,9 +107,15 @@
                        "seller" {"@id" (str base "/#store")}}}
       (seq imgs) (assoc "image" imgs))))
 
-(defn- ld-block [graph]
+(defn- ld-block
+  "Wraps the schema.org nodes `graph` into one JSON-LD document with @context
+  and @graph, so each page carries exactly one JSON-LD script."
+  [graph]
   {"@context" "https://schema.org" "@graph" graph})
 
+;; One place that holds each page's title and description, taken from the
+;; search intent in design-spec.md. Not-found and unavailable states are
+;; noindex so error pages never get indexed.
 (defn- meta-for
   "Returns {:title :description :path :robots? :og-image :og-type :ld-extra}."
   [{:keys [route site page] :as state}]
@@ -169,7 +200,13 @@
          :path (or (:path route) "/admin") :noindex? true}))))
 
 (defn head
-  "Head data for a page state. `base-url` has no trailing slash."
+  "Head data for one page state.
+  Arguments: `state` (map with :route {:name :params :query :path}, :site
+  (site-info), :page {:status :data}) and `base-url` (origin without trailing
+  slash; trailing slashes are stripped).
+  Returns {:title :description :canonical :robots :og {:title :description
+  :url :type :image :site-name} :jsonld}; :robots is \"noindex, follow\" or nil.
+  Pure; no errors (unknown routes get the generic staff-area head)."
   [state base-url]
   (let [{:keys [title description path noindex? og-image og-type ld-extra]} (meta-for state)
         base (str/replace (or base-url "") #"/+$" "")
@@ -192,7 +229,10 @@
      :jsonld (ld-block graph)}))
 
 (defn head->hiccup
-  "Hiccup for the <head> children."
+  "Hiccup vector of the <head> children for a head map (the result of `head`):
+  title, meta description, canonical link, Open Graph and Twitter card tags,
+  an optional robots tag, and the JSON-LD <script type=\"application/ld+json\">.
+  Pure."
   [{:keys [title description canonical robots og jsonld]}]
   (cond-> [[:title title]
            [:meta {:name "description" :content description}]

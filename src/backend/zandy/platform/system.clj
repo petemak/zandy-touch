@@ -20,8 +20,10 @@
   (:import (java.util.concurrent Executors ScheduledExecutorService TimeUnit)))
 
 (defn build-ctx
-  "The long-lived components every handler receives. `overrides` replaces any key (tests use it for
-  the clock, mailer and media store)."
+  "Builds the handler context map shared by every handler.
+  Keys: :config (validated config), :conn (Datomic connection), :clock (function returning a java.util.Date),
+  :mailer (Mailer), :media-store (MediaStore), :image-processor (:vips or :stub), :user-summaries (function from user entity ids to summary maps).
+  `overrides` is a map merged over the defaults (tests replace :clock, :mailer, :media-store). No side effects."
   [config conn overrides]
   (let [base (merge {:config config
                      :conn conn
@@ -36,9 +38,11 @@
 
 (defmethod ig/init-key ::conn [_ {:keys [config]}]
   (let [conn (datomic/connect! (get-in config [:datomic :uri]))]
+    ;; Dev and test migrate on boot; with auto-migrate off (prod) instances only verify the ledger, so migrations run once as a separate pre-deploy step (no boot race between instances).
     (if (get-in config [:datomic :auto-migrate?])
       (migrations/migrate! conn)
       (migrations/verify-current! conn))
+    ;; Outside prod the owner is created automatically; in prod it is created only by the bootstrap-owner command (no secrets in seed data).
     (when (not= :prod (:profile config))
       (bootstrap/bootstrap-owner! conn (:auth config)))
     conn))
@@ -58,6 +62,7 @@
 (defmethod ig/init-key ::jobs [_ {:keys [ctx]}]
   (let [pool (Executors/newScheduledThreadPool 1)
         claimer (str "backend-" (random-uuid))]
+    ;; Every instance runs these jobs; this is safe because outbox messages are claimed with :db/cas and the clean-ups are idempotent.
     (every pool 15 #(notifications/process-once! ctx claimer))
     (every pool 3600 (fn []
                        (idempotency/cleanup! (:conn ctx) (util/now ctx))
@@ -76,17 +81,27 @@
 
 (defmethod ig/halt-key! ::server [_ connector] (conn/stop! connector))
 
-(defn system-map [profile]
+(defn system-map
+  "The Integrant system map for `profile` (:dev, :test or :prod): config, conn, ctx, jobs, server, wired by refs."
+  [profile]
   {::config {:profile profile}
    ::conn {:config (ig/ref ::config)}
    ::ctx {:config (ig/ref ::config) :conn (ig/ref ::conn)}
    ::jobs {:ctx (ig/ref ::ctx)}
    ::server {:ctx (ig/ref ::ctx) :jobs (ig/ref ::jobs)}})
 
-(defn start [profile] (ig/init (system-map profile)))
-(defn stop [system] (ig/halt! system))
+(defn start
+  "Initialises the whole system for `profile` and returns the running system map. Side effects: connects to Datomic, may migrate/seed, starts background jobs and the HTTP server."
+  [profile] (ig/init (system-map profile)))
+(defn stop
+  "Halts a system returned by start (server, jobs, then the Datomic connection)."
+  [system] (ig/halt! system))
 
-(defn -main [& _]
+(defn -main
+  "Entry point of the server (`clojure -M:run`): starts the system for the profile in the environment and blocks.
+  Registers a shutdown hook that stops the system."
+  [& _]
   (let [system (start (config/profile-from-env))]
     (.addShutdownHook (Runtime/getRuntime) (Thread. ^Runnable (fn [] (stop system))))
+    ;; Block forever: the server runs on its own threads; the shutdown hook above stops it on SIGTERM.
     @(promise)))

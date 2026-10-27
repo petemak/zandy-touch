@@ -9,14 +9,23 @@
          '[clojure.set :as set]
          '[clojure.string :as str])
 
-(def root (-> *file* fs/absolutize fs/parent fs/parent fs/parent str))
+(def root
+  "Project root directory (three levels above this file)."
+  (-> *file* fs/absolutize fs/parent fs/parent fs/parent str))
 
-(defn source-files []
+(defn source-files
+  "Every Clojure source file the checks look at: ssr/src, src/shared,
+  src/frontend and ssr/dev. Returns maps {:file absolute-path :rel
+  path-from-root :dir source-root}."
+  []
   (for [dir ["ssr/src" "src/shared" "src/frontend" "ssr/dev"]
         f (fs/glob (str root "/" dir) "**.{clj,cljc,cljs}")]
     {:file (str f) :rel (str (fs/relativize root f)) :dir dir}))
 
-(defn read-ns-form [file]
+(defn read-ns-form
+  "The first (ns ...) form of `file`, read with both :clj and :cljs reader
+  features, or nil. Unknown tagged literals are kept as plain data."
+  [file]
   (with-open [r (java.io.PushbackReader. (clojure.java.io/reader file))]
     (binding [*default-data-reader-fn* (fn [_ v] v)]
       (loop []
@@ -25,7 +34,10 @@
                 (and (seq? form) (= 'ns (first form))) form
                 :else (recur)))))))
 
-(defn requires [ns-form]
+(defn requires
+  "Set of library symbols required by the ns form `ns-form` (:require clauses
+  only; vectors and bare symbols)."
+  [ns-form]
   (let [clauses (filter #(and (seq? %) (= :require (first %))) ns-form)]
     (set (for [c clauses, spec (rest c)
                :let [lib (cond (symbol? spec) spec (vector? spec) (first spec))]
@@ -33,6 +45,8 @@
            lib))))
 
 (def graph
+  "Map of namespace symbol -> {:requires #{...} :dir source-root} for all
+  source files."
   (into {}
         (keep (fn [{:keys [file dir]}]
                 (when-let [form (read-ns-form file)]
@@ -47,7 +61,14 @@
 ;; frontend.api uses shared.routes for query encoding; frontend.admin.state
 ;; extends the action handlers of frontend.state.
 
+;; Why a closed list: the architecture is enforced by this file. An unexpected
+;; require (say, shared code reaching into the browser namespaces) is a build
+;; failure, not a review comment.
 (def allowed
+  "The allowed-edge list: namespace (or prefix ending in \".*\") -> project
+  namespaces it may require. It encodes architecture.md sections 2.3 and 2.4
+  and is the single place to change when the design changes. A namespace with
+  no entry fails the check, so new namespaces must be added deliberately."
   {"zandy.shared.format" #{}
    "zandy.shared.cart" #{}
    "zandy.shared.json" #{}
@@ -101,11 +122,19 @@
            (sort-by (comp count key) >)
            first second)))
 
-(def forbidden-in-shared ["zandy.frontend" "zandy.ssr" "zandy.backend" "datomic" "io.pedestal"])
+(def forbidden-in-shared
+  "Namespace prefixes that code in src/shared must never require
+  (architecture.md section 2.4)."
+  ["zandy.frontend" "zandy.ssr" "zandy.backend" "datomic" "io.pedestal"])
 
-(defn- project-ns? [s] (str/starts-with? (str s) "zandy."))
+(defn- project-ns?
+  "True for project namespaces (prefix \"zandy.\")."
+  [s] (str/starts-with? (str s) "zandy."))
 
-(defn find-cycle [edges]
+(defn find-cycle
+  "A dependency cycle in `edges` (map ns -> set of ns), as a vector of
+  namespaces, or nil."
+  [edges]
   (let [visiting (atom #{}) done (atom #{})]
     (letfn [(visit [n path]
               (cond (@done n) nil
@@ -115,7 +144,11 @@
                                 (swap! visiting disj n) (swap! done conj n) r))))]
       (some #(visit % []) (keys edges)))))
 
-(defn check-graph []
+(defn check-graph
+  "Check B3: every project require is an allowed edge, shared code requires
+  nothing forbidden and does not use js/, and there is no cycle. Returns a
+  vector of error strings (empty when the check passes)."
+  []
   (let [errors (atom [])
         err! #(swap! errors conj %)
         edges (into {} (map (fn [[n {:keys [requires]}]] [n (set (filter (fn [r] (and (project-ns? r) (contains? graph r))) requires))])) graph)]
@@ -140,7 +173,10 @@
 ;; ---------------------------------------------------------------------------
 ;; API calls against the contract
 
-(defn contract-routes []
+(defn contract-routes
+  "Endpoints listed in api-contract.md as `### METHOD /path` headings:
+  [{:method :path}]."
+  []
   (->> (str/split-lines (slurp (str root "/api-contract.md")))
        (keep #(re-matches #"### (GET|POST|PUT|PATCH|DELETE) (/\S+)" %))
        (map (fn [[_ m p]] {:method m :path p}))))
@@ -148,7 +184,11 @@
 (defn- route-regex [path]
   (re-pattern (str "^" (str/replace (str/replace path #"\{[^}]+\}" "[^/]+") "/" "/") "$")))
 
-(defn literal-in-contract? [literal routes]
+(defn literal-in-contract?
+  "True when the string `literal` from the source (a full path, or the start of
+  a path built with `str`) matches an endpoint path of `routes`, with {param}
+  segments matching any segment."
+  [literal routes]
   (let [paths (map :path routes)]
     (or (some #(re-matches (route-regex %) literal) paths)
         ;; a prefix ending in "/" is the start of a path built with (str ...)
@@ -157,7 +197,11 @@
         ;; a prefix without a trailing slash followed by a computed tail
         (some #(str/starts-with? % literal) paths))))
 
-(defn check-api-calls []
+(defn check-api-calls
+  "Check B9b: every \"/api/...\" string literal in shared, browser and ssr code
+  is an endpoint of api-contract.md, so no endpoint is invented. Returns a
+  vector of error strings."
+  []
   (let [routes (contract-routes)
         errors (atom [])]
     (doseq [{:keys [file rel dir]} (source-files)
@@ -178,7 +222,11 @@
 (defn- ssr-version [lib]
   (get-in (edn/read-string (slurp (str root "/ssr/deps.edn"))) [:deps lib :mvn/version]))
 
-(defn check-versions []
+(defn check-versions
+  "Check B19: replicant and reitit-core have the same version in ssr/deps.edn
+  and shadow-cljs.edn (the browser and the server must render with the same
+  library). Returns a vector of error strings."
+  []
   (vec (for [[lib] [['no.cjohansen/replicant] ['metosin/reitit-core]]
              :let [a (ssr-version lib) b (shadow-version lib)]
              :when (or (nil? a) (not= a b))]
@@ -186,7 +234,10 @@
 
 ;; ---------------------------------------------------------------------------
 
-(defn run [name f]
+(defn run
+  "Runs the check function `f`, prints PASS or FAIL with the errors, and
+  returns 0 or 1 for the exit code."
+  [name f]
   (let [errors (f)]
     (if (seq errors)
       (do (println (str "FAIL " name)) (run! #(println "  " %) errors) 1)

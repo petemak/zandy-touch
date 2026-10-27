@@ -6,18 +6,32 @@
   (:require [clojure.string :as str]
             [zandy.shared.routes :as routes]))
 
-(defn- url [path query]
+(defn- url
+  "Request URL: `path` with the query map encoded by routes/encode-query (empty
+  values dropped)."
+  [path query]
   (let [qs (when (seq query) (routes/encode-query query))]
     (cond-> path (seq qs) (str "?" qs))))
 
-(defn- header-map [^js headers]
+(defn- header-map
+  "Response headers as a map of lower-case name -> value."
+  [^js headers]
   (let [m (atom {})]
     (.forEach headers (fn [v k] (swap! m assoc (str/lower-case k) v)))
     @m))
 
 (defn request!
-  "opts: :method (keyword, default :get) :path :query :body (map, JSON) :form-data
-  (js FormData) :csrf :idempotency-key :no-cache? :csv?. `callback` gets the result."
+  "Sends one request to /api (never to another origin). Argument map: {:method
+  (keyword, default :get) :path :query (map) :body (map, sent as JSON)
+  :form-data (js FormData, for uploads; the browser sets the multipart
+  boundary) :csrf (X-CSRF-Token for staff changes) :idempotency-key
+  (Idempotency-Key header) :no-cache? (Cache-Control: no-cache, to bypass
+  caches for a fresh stock check)} and `callback`. Cookies are sent with the
+  same-origin credentials. The callback is called once with {:status int
+  :headers {lower-case-name value} :body parsed-JSON-map-or-nil}, or {:status
+  nil :error string} when the request itself failed (offline, blocked).
+  Non-2xx responses are not errors here: the status and error body are passed
+  on for the action handler to interpret. Side effect: network request."
   [{:keys [method path query body form-data csrf idempotency-key no-cache?]} callback]
   (let [method (str/upper-case (name (or method :get)))
         headers (cond-> #js {"Accept" "application/json"}

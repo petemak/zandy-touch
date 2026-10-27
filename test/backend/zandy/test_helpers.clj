@@ -20,7 +20,9 @@
 
 (alter-var-root #'log/*sink* (constantly (fn [_] nil)))
 
-(def owner-password "correct-horse-1")
+(def owner-password
+  "Password given to the owner account that setup-owner! creates."
+  "correct-horse-1")
 
 (defn make-ctx
   "A fresh context. Override keys with `overrides` (e.g. {:clock f})."
@@ -42,10 +44,14 @@
   []
   (some? (System/getenv "ZANDY_TEST_DATOMIC_URI_PREFIX")))
 
-(defn advance-clock! [ctx ms]
+(defn advance-clock!
+  "Moves the controllable test clock of `ctx` forward by `ms` milliseconds."
+  [ctx ms]
   (swap! (::clock ctx) (fn [^Date d] (Date. (+ (.getTime d) ms)))))
 
-(defn app [ctx] (http/connector ctx))
+(defn app
+  "The unstarted Pedestal connector for `ctx`, ready for call/staff (in-process requests)."
+  [ctx] (http/connector ctx))
 
 (defn call
   "Performs a request. Returns {:status :headers :body} with the JSON body parsed (kebab keys)."
@@ -61,9 +67,12 @@
                  (:body resp))]
     (assoc resp :body parsed :raw (:body resp))))
 
-(defn error-code [resp] (get-in resp [:body :error :code]))
+(defn error-code
+  "The API error code string of a response from call, or nil."
+  [resp] (get-in resp [:body :error :code]))
 
 (defn create-user!
+  "Creates a user directly in the database. Options: :name :email :role (default :support) :password (default owner-password) :must-change? :notify?."
   [ctx {:keys [name email role password must-change? notify?] :or {role :support password owner-password}}]
   (accounts-db/create-user! (:conn ctx)
                             {:id (random-uuid) :name name :email email :role role
@@ -94,9 +103,13 @@
   (create-user! ctx {:name "Sandra" :email "owner@example.com" :role :owner :notify? true})
   (login! connector "owner@example.com" owner-password))
 
-(defn sent-mail [ctx] (mailer/sent-messages (:mailer ctx)))
+(defn sent-mail
+  "The messages the log mailer of `ctx` has been asked to send, oldest first."
+  [ctx] (mailer/sent-messages (:mailer ctx)))
 
-(defn db [ctx] (d/db (:conn ctx)))
+(defn db
+  "The current Datomic database value of `ctx`."
+  [ctx] (d/db (:conn ctx)))
 
 (defn jpeg-bytes
   "A small solid-colour JPEG."
@@ -144,6 +157,7 @@
           overrides)))
 
 (defn place-order!
+  "POSTs /api/orders for `items` [[product qty] ...] with the given idempotency key (random by default) and body overrides. Returns the call response."
   ([app items] (place-order! app items (str (random-uuid)) {}))
   ([app items idem overrides]
    (call app :post "/api/orders" :body (order-body items overrides) :headers {"Idempotency-Key" idem})))

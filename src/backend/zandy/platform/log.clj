@@ -13,6 +13,8 @@
     :authorization :phone :customer-phone :email :customer-email :name :customer-name
     :address-line :directions :message :note :password-hash :smtp-password :secret :body})
 
+;; Allowlist-by-exclusion: any key in `sensitive` (credentials, contact details, free text) is replaced, at any depth.
+;; Throwables are reduced to the class name and long strings are cut at 500 characters.
 (defn- scrub [x]
   (cond
     (map? x) (into {} (map (fn [[k v]] [k (if (contains? sensitive k) "[redacted]" (scrub v))])) x)
@@ -26,12 +28,22 @@
   [level event data]
   (try
     (*sink* (json/encode (merge {:ts (Date.) :level (name level) :event (name event)} (scrub data))))
+    ;; Logging must never break a request.
     (catch Throwable _ nil)))
 
-(defn info [event data] (log! :info event data))
-(defn warn [event data] (log! :warn event data))
-(defn error [event data] (log! :error event data))
+(defn info
+  "Logs `event` (keyword) with context map `data` at info level. See log!."
+  [event data] (log! :info event data))
+(defn warn
+  "Logs `event` (keyword) with context map `data` at warn level. See log!."
+  [event data] (log! :warn event data))
+(defn error
+  "Logs `event` (keyword) with context map `data` at error level. See log!."
+  [event data] (log! :error event data))
 
-(defn exception-data [^Throwable ex]
+(defn exception-data
+  "Context map {:exception class-name :exception-message single-line message} for logging an exception.
+  The message is included, so callers must not put secrets in exception messages."
+  [^Throwable ex]
   {:exception (.getName (class ex))
    :exception-message (str/replace (str (.getMessage ex)) #"\s+" " ")})

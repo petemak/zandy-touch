@@ -1,4 +1,6 @@
 (ns zandy.frontend.help-test
+  "Tests of frontend.admin.help: the role filter, the page-to-topic mapping and
+  the topic views. Runs in Node."
   (:require [cljs.test :refer [deftest is testing]]
             [clojure.string :as str]
             [clojure.walk :as walk]

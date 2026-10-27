@@ -3,11 +3,16 @@
 (ns zandy.frontend.admin.help-data
   "Staff help topics (design-spec.md A13) as plain data. Body blocks are
   hiccup: [:p ...] [:h2 ...] [:ol [:li ...]] [:ul [:li ...]] [:p.help-note ...];
-  links are already [:a {:href path} text].")
+  links are already [:a {:href path} text]. Generated from admin-help.md by
+  scripts/build/help.clj; browser code (ClojureScript) read by
+  zandy.frontend.admin.help, which filters topics by staff role.")
 
-(def title "Zandy Touch staff help")
+(def title
+  "Title of the help section (the first heading of admin-help.md)."
+  "Zandy Touch staff help")
 
 (def groups
+  "Topic group names in the order they appear in admin-help.md."
   ["Getting started" "Orders" "Products and stock" "Bulk import" "Messages" "Staff and account"])
 
 (def pages
@@ -27,6 +32,8 @@
    "A13" {:route :admin-help :path "/admin/help" :label "Help"}})
 
 (def topics
+  "Help topics in file order. Each is {:id :title :roles #{\"owner\" \"support\"} :pages [page ids]
+  :group :summary :body [hiccup blocks]}. :roles says who may read the topic."
   [{:id "getting-started"
     :title "Getting started"
     :roles #{"owner" "support"}

@@ -1,7 +1,9 @@
 #!/usr/bin/env bb
 ;; Copies design-tokens.css, assets/ and styles/*.css into target/static/ and
 ;; writes target/static/asset-manifest.edn (logical name -> hashed file name),
-;; which the frontend server reads at boot. Source files are never modified
+;; which the frontend server (ssr.static) reads on every page request, so a new
+;; release is picked up without a restart. Babashka script, build time only (no
+;; browser or server runtime). Source files are never modified
 ;; (check B16). Run after `npx shadow-cljs release app`:
 ;;   bb scripts/build/assets.clj
 (require '[babashka.fs :as fs]
@@ -9,17 +11,24 @@
          '[clojure.string :as str])
 (import '(java.security MessageDigest))
 
+;; Project root (three levels up from this file) and the output folder that the
+;; frontend server serves as STATIC_DIR.
 (def root (-> *file* fs/absolutize fs/parent fs/parent fs/parent str))
 (def out (str root "/target/static"))
 
+;; First 10 hex characters of the SHA-256 of `bs`: the content fingerprint put in
+;; file names, so a changed file gets a new URL and can be cached for a year.
 (defn sha10 [^bytes bs]
   (let [d (.digest (MessageDigest/getInstance "SHA-256") bs)]
     (subs (apply str (map #(format "%02x" %) d)) 0 10)))
 
+;; "css/app.css" + content -> "css/app.<hash>.css".
 (defn hashed-name [rel bs]
   (let [i (str/last-index-of rel ".")]
     (str (subs rel 0 i) "." (sha10 bs) (subs rel i))))
 
+;; Writes `bs` under target/static with a fingerprinted name. Returns
+;; [logical-name written-relative-path] for the manifest.
 (defn write-hashed! [logical dest-rel ^bytes bs]
   (let [rel (hashed-name dest-rel bs)
         f (fs/path out rel)]
@@ -35,6 +44,7 @@
 (when (fs/exists? (str out "/assets")) (fs/delete-tree (str out "/assets")))
 (fs/copy-tree (str root "/assets") (str out "/assets"))
 
+;; (Why concatenated: one request and one fingerprint for all component styles.)
 ;; 3. styles: concatenated in file-name order into one hashed file
 (def style-files (sort (map str (fs/glob (str root "/styles") "*.css"))))
 (def app-css (.getBytes (str/join "\n" (map slurp style-files)) "UTF-8"))
@@ -51,7 +61,8 @@
 (def manifest (into {} (remove nil?) [tokens-entry css-entry js-entry]))
 (spit (str out "/asset-manifest.edn") (pr-str manifest))
 
-;; 5. Portfolio host page (unhashed names, same folder layout)
+;; 5. Portfolio host page for the component scenes (frontend.scenes.*): the same
+;; CSS and assets under unhashed names and the same folder layout.
 (let [p (str root "/target/portfolio")]
   (fs/create-dirs (str p "/static/css"))
   (fs/copy (str root "/design-tokens.css") (str p "/static/design-tokens.css") {:replace-existing true})

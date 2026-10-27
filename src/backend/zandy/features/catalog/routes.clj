@@ -17,7 +17,9 @@
 
 ;; ---- public ------------------------------------------------------------------------------------
 
-(defn list-categories [{:keys [ctx]}]
+(defn list-categories
+  "Handler for GET /api/categories (public, cached). Returns 200 {:items [{:id :slug :name :description :sortOrder :productCount}]}; productCount counts published products only."
+  [{:keys [ctx]}]
   (let [d (dbv ctx)
         counts (frequencies (map #(get-in % [:category :slug]) (db/published-products d)))]
     {:status 200
@@ -25,7 +27,9 @@
                                         :product-count (get counts (:slug c) 0)))
                          (db/categories d))}}))
 
-(defn list-products [{:keys [ctx parameters]}]
+(defn list-products
+  "Handler for GET /api/products (public, cached). Query: categorySlug, q, availability, ownBrand, featured, sort, page, pageSize. Returns 200 with a page of public product summaries (sold-out products last)."
+  [{:keys [ctx parameters]}]
   (let [q (:query parameters)
         opts (api/view-opts ctx)
         products (-> (db/published-products (dbv ctx))
@@ -34,7 +38,9 @@
         page (logic/paginate products (:page q) (:page-size q))]
     {:status 200 :body (update page :items (fn [items] (mapv #(logic/summary-view % opts) items)))}))
 
-(defn get-product [{:keys [ctx parameters]}]
+(defn get-product
+  "Handler for GET /api/products/:slug (public, cached). Returns 200 with the product detail and up to 4 related products, or notFound (404) when the slug is unknown or the product is not published."
+  [{:keys [ctx parameters]}]
   (let [slug (get-in parameters [:path :slug])
         opts (api/view-opts ctx)
         d (dbv ctx)
@@ -45,7 +51,9 @@
         {:status 200 :body (logic/detail-view p related opts)})
       (errors/fail! :notFound "Product not found."))))
 
-(defn sitemap-entries [{:keys [ctx]}]
+(defn sitemap-entries
+  "Handler for GET /api/sitemap-entries (public, cached 1 h): published product slugs with updated-at, and category slugs, for the frontend server's sitemap.xml."
+  [{:keys [ctx]}]
   {:status 200 :body (api/published-sitemap ctx)})
 
 ;; ---- staff products ----------------------------------------------------------------------------
@@ -55,7 +63,9 @@
         by ((:user-summaries ctx) [(:updated-by-eid p)])]
     (f p (get by (:updated-by-eid p)) opts)))
 
-(defn admin-list [{:keys [ctx parameters]}]
+(defn admin-list
+  "Handler for GET /api/admin/products (staff). Query: status, categorySlug, q, stock, sort, page, pageSize (default 25). Returns 200 with a page of staff summaries plus :counts {:out :low}. Archived products are hidden unless status=archived."
+  [{:keys [ctx parameters]}]
   (let [q (:query parameters)
         opts (api/view-opts ctx)
         all (db/all-products (dbv ctx))
@@ -67,21 +77,29 @@
                (update :items (fn [items] (mapv #(logic/admin-summary % (get by (:updated-by-eid %)) opts) items)))
                (assoc :counts (logic/admin-counts all (:low opts))))}))
 
-(defn admin-get [{:keys [ctx parameters]}]
+(defn admin-get
+  "Handler for GET /api/admin/products/:id (staff). Returns 200 with the staff detail, notFound (404) for a bad or unknown id."
+  [{:keys [ctx parameters]}]
   (let [id (v/parse-uuid-or-404 (get-in parameters [:path :id]))
         p (or (db/product-by-id (dbv ctx) id) (errors/fail! :notFound "Product not found."))]
     {:status 200 :body (admin-view ctx p logic/admin-detail)}))
 
-(defn admin-create [{:keys [ctx parameters user]}]
+(defn admin-create
+  "Handler for POST /api/admin/products (staff, idempotent). Body: CreateProduct. Returns 201 with the staff detail; errors as api/create-product!."
+  [{:keys [ctx parameters user]}]
   (let [p (api/create-product! ctx {:user-eid (:eid user)} (:body parameters))]
     {:status 201 :body (admin-view ctx p logic/admin-detail)}))
 
-(defn admin-patch [{:keys [ctx parameters user]}]
+(defn admin-patch
+  "Handler for PATCH /api/admin/products/:id (staff). Body: PatchProduct (nulls kept: :keep-nils? true so null clears a field). Returns 200 with the staff detail; errors as api/update-product!."
+  [{:keys [ctx parameters user]}]
   (let [id (v/parse-uuid-or-404 (get-in parameters [:path :id]))
         p (api/update-product! ctx {:user-eid (:eid user)} id (:body parameters))]
     {:status 200 :body (admin-view ctx p logic/admin-detail)}))
 
-(defn admin-delete [{:keys [ctx parameters user]}]
+(defn admin-delete
+  "Handler for DELETE /api/admin/products/:id (staff). Archives the product and returns 204 with no body."
+  [{:keys [ctx parameters user]}]
   (let [id (v/parse-uuid-or-404 (get-in parameters [:path :id]))]
     (api/archive-product! ctx {:user-eid (:eid user)} id)
     {:status 204 :body nil}))
@@ -92,7 +110,9 @@
   {:id (:id m) :type (:type m) :reason (:reason m) :delta (:delta m) :quantity-after (:quantity-after m)
    :note (:note m) :order-number (:order-number m) :at (:at m) :by by})
 
-(defn stock-adjust [{:keys [ctx parameters user]}]
+(defn stock-adjust
+  "Handler for POST /api/admin/products/:id/stock-movements (staff, idempotent). Body: StockMovement. Returns 201 {:movement :stockQuantity :availability} after the atomic adjustment; errors as api/adjust-stock!."
+  [{:keys [ctx parameters user]}]
   (let [id (v/parse-uuid-or-404 (get-in parameters [:path :id]))
         movement-id (api/adjust-stock! ctx {:user-id (:id user)} id (:body parameters))
         d (dbv ctx)
@@ -104,7 +124,9 @@
             :stock-quantity (:stock-quantity p)
             :availability (logic/availability (:stock-quantity p))}}))
 
-(defn stock-history [{:keys [ctx parameters]}]
+(defn stock-history
+  "Handler for GET /api/admin/products/:id/stock-movements (staff). Query: page, pageSize (default 25). Returns 200 with a page of movements, newest first, each with the acting user summary; notFound (404) for an unknown product."
+  [{:keys [ctx parameters]}]
   (let [id (v/parse-uuid-or-404 (get-in parameters [:path :id]))
         d (dbv ctx)
         p (or (db/product-by-id d id) (errors/fail! :notFound "Product not found."))
@@ -115,7 +137,9 @@
 
 ;; ---- bulk publication ----------------------------------------------------------------------------
 
-(defn publish-many [{:keys [ctx parameters user]}]
+(defn publish-many
+  "Handler for POST /api/admin/product-publications (staff). Body: {:productIds [...]}. Returns 200 {:results [{:productId :status \"published\"|\"rejected\" :errors?}]}; one product's failure does not stop the others."
+  [{:keys [ctx parameters user]}]
   (let [results (mapv (fn [id]
                         (let [r (api/publish-product! ctx {:user-eid (:eid user)} (parse-uuid id))]
                           (cond-> {:product-id id :status (name (:status r))}
@@ -124,6 +148,7 @@
     {:status 200 :body {:results results}}))
 
 (def routes
+  "Route data for the catalog slice. Public reads carry :cache headers; writes are staff-only, creates and stock movements are :idempotent?."
   [{:method :get :path "/api/categories" :name :catalog/categories :access :public :cache cache-categories
     :handler list-categories}
    {:method :get :path "/api/products" :name :catalog/products :access :public :cache cache-products

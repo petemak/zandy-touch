@@ -2,7 +2,9 @@
   "Reads api-contract.md so tests can compare the route table with it."
   (:require [clojure.string :as str]))
 
-(defn contract-text [] (slurp "api-contract.md"))
+(defn contract-text
+  "The text of api-contract.md, read from the project root (tests run from there)."
+  [] (slurp "api-contract.md"))
 
 (defn- normalize-path [p]
   (-> p (str/replace "/media/{photoId}-{variant}.webp" "/media/:param") (str/replace #"\{[^}]+\}" ":param")))
@@ -24,4 +26,6 @@
                                   :else :public))]]
        {:method (keyword (str/lower-case method)) :path path :norm (normalize-path path) :access access}))))
 
-(defn route-norm [path] (str/replace path #":[A-Za-z-]+" ":param"))
+(defn route-norm
+  "Normalises a route path for comparison with the contract: every \":name\" segment becomes \":param\"."
+  [path] (str/replace path #":[A-Za-z-]+" ":param"))

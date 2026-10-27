@@ -1,4 +1,8 @@
 (ns zandy.shared.document-test
+  "Tests of shared.document and shared.seo as the server renders them: title,
+  description, canonical, Open Graph, one JSON-LD block, one h1 and the
+  embedded initial state. A .cljc test, run on the JVM and in the Node test
+  build."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [zandy.shared.document :as document]

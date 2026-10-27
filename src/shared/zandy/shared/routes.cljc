@@ -1,12 +1,21 @@
 (ns zandy.shared.routes
-  "Page route table (Reitit data, matching only). Used by the frontend server
-  and by the browser router. No static route sits beside a {param} route at
-  the same position (design-spec.md section 0)."
+  "Page route table as Reitit data (name, path, :ssr? or :shell?, :admin?,
+  :access) plus URL helpers (query parsing and encoding, matching, path
+  building). Shared code (.cljc): the frontend server matches incoming paths
+  with it and the browser router uses it for client navigation
+  (architecture.md section 2.4). Reitit is used only as a data matcher."
   (:require [clojure.string :as str]
             [reitit.core :as r]
             #?(:cljs [goog.string :as gstr])))
 
 (def routes
+  "Page route table: a vector of [path data] pairs. Data keys: :name (keyword),
+  :ssr? (server renders the full page, P1 to P4, P9 to P14 and P17), :shell?
+  (the server sends only the document shell and the browser renders it: cart,
+  checkout, order-placed, track-order, unsubscribe and all admin pages),
+  :cache (:catalogue or :info, picks the Cache-Control lifetime), :policy
+  (policy type for legal pages), :admin? and :access (:public, :staff or
+  :owner) for admin routes A1 to A13."
   [["/" {:name :home :ssr? true :cache :catalogue}]
    ["/shop" {:name :shop :ssr? true :cache :catalogue}]
    ["/categories/:slug" {:name :category :ssr? true :cache :catalogue}]
@@ -39,13 +48,23 @@
    ["/admin/help" {:name :admin-help :shell? true :admin? true :access :staff}]
    ["/admin/help/:topic" {:name :admin-help-topic :shell? true :admin? true :access :staff}]])
 
-(def router (r/router routes))
+(def router
+  "Compiled Reitit router for `routes`. Use `match-url` and `path-for` rather
+  than calling it directly."
+  (r/router routes))
 
-(defn url-decode [s]
+(defn url-decode
+  "Percent-decodes `s` as UTF-8 (java.net.URLDecoder on the JVM,
+  goog.string/urlDecode in the browser). \"+\" becomes a space on both."
+  [s]
   #?(:clj (java.net.URLDecoder/decode ^String s "UTF-8")
      :cljs (gstr/urlDecode s)))
 
-(defn url-encode [s]
+(defn url-encode
+  "Percent-encodes `s` as UTF-8, with spaces as %20 on both platforms. The two
+  platforms may differ for the rarely used characters ~ ! ' ( ) *, which the
+  JVM encoder and encodeURIComponent treat differently."
+  [s]
   #?(:clj (-> (java.net.URLEncoder/encode ^String s "UTF-8") (str/replace "+" "%20"))
      :cljs (gstr/urlEncode s)))
 
@@ -62,6 +81,8 @@
                        (url-decode (or v ""))]))))
           (str/split qs #"&"))))
 
+;; Sorted keys keep URLs identical across renders, which keeps canonical links
+;; and CDN cache keys stable.
 (defn encode-query
   "{:a 1 :q \"x y\"} -> \"a=1&q=x%20y\" (sorted keys so URLs are stable)."
   [m]
@@ -78,6 +99,8 @@
         [path qs] (str/split no-hash #"\?" 2)]
     [path qs]))
 
+;; A trailing slash is ignored so "/shop/" and "/shop" are the same page (and
+;; the same cache key).
 (defn match-url
   "Match a path (optionally with a query string). Returns
   {:name :path :params :query :data} or nil."
@@ -105,6 +128,9 @@
          qs (when (seq query) (encode-query query))]
      (cond-> path (seq qs) (str "?" qs)))))
 
-(defn with-query [path query]
+(defn with-query
+  "`path` with `query` (a map, see encode-query) appended as \"?...\". Empty or
+  nil values are dropped, and no \"?\" is added when nothing is left. Pure."
+  [path query]
   (let [qs (encode-query query)]
     (cond-> path (seq qs) (str "?" qs))))

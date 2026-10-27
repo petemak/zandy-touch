@@ -51,7 +51,8 @@
        vec))
 
 (defn check
-  "Validates value against the schema. Returns the (decoded) value or throws validationFailed."
+  "Validates `value` against Malli `schema`, optionally decoding it first with `transformer`.
+  Returns the decoded value, or throws validationFailed (422) with details built from the Malli explanation."
   ([schema value] (check schema value nil))
   ([schema value transformer]
    (let [value (if transformer (m/decode schema value transformer) value)]
@@ -60,17 +61,21 @@
        value))))
 
 (def query-transformer
+  "Malli transformer for query strings: unknown keys are dropped and strings are coerced to numbers, booleans and keywords per the schema."
   (mt/transformer mt/strip-extra-keys-transformer mt/string-transformer))
 
 (def Uuid
+  "Malli schema: a java.util.UUID value (error code \"invalid\")."
   [:fn {:error/code "invalid" :error/message "Not a valid id."} uuid?])
 
 (defn parse-uuid-or-404
-  "Path ids that are not UUIDs cannot exist."
+  "Parses path id `s` as a UUID. Throws notFound (404) when it is not one, since such an id cannot exist."
   [s]
   (or (parse-uuid (str s)) (errors/fail! :notFound "Not found.")))
 
-(def phone-regex #"^(?:\+256|0)7\d{8}$")
+(def phone-regex
+  "Pattern for a Ugandan mobile number in either local (07xxxxxxxx) or +2567xxxxxxxx form, after spaces and dashes are removed."
+  #"^(?:\+256|0)7\d{8}$")
 
 (defn normalize-phone
   "Accepts 07xxxxxxxx or +2567xxxxxxxx (spaces allowed) and returns E.164, else nil."
@@ -80,14 +85,27 @@
       (when (re-matches phone-regex t)
         (if (str/starts-with? t "0") (str "+256" (subs t 1)) t)))))
 
-(def email-regex #"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+(def email-regex
+  "Deliberately loose email pattern: something@something.something with no spaces."
+  #"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
-(def Phone [:fn {:error/code "invalidPhone" :error/message "Enter a valid Uganda phone number."} (fn [s] (some? (normalize-phone s)))])
-(def Email [:and [:string {:max 200}] [:re {:error/code "invalidEmail" :error/message "Enter a valid email address."} email-regex]])
+(def Phone
+  "Malli schema: a string that normalize-phone accepts (error code \"invalidPhone\")."
+  [:fn {:error/code "invalidPhone" :error/message "Enter a valid Uganda phone number."} (fn [s] (some? (normalize-phone s)))])
+(def Email
+  "Malli schema: a string of at most 200 characters matching email-regex (error code \"invalidEmail\")."
+  [:and [:string {:max 200}] [:re {:error/code "invalidEmail" :error/message "Enter a valid email address."} email-regex]])
 
 (def UuidString
+  "Malli schema: a string that parses as a UUID (error code \"invalid\")."
   [:fn {:error/code "invalid" :error/message "Not a valid id."} (fn [s] (and (string? s) (some? (parse-uuid s))))])
 
-(def Page [:int {:min 1}])
-(def PageSize [:int {:min 1 :max 100}])
-(def PagingQuery [:map [:page {:optional true} Page] [:page-size {:optional true} PageSize]])
+(def Page
+  "Malli schema: 1-based page number, integer >= 1."
+  [:int {:min 1}])
+(def PageSize
+  "Malli schema: page size, integer 1 to 100."
+  [:int {:min 1 :max 100}])
+(def PagingQuery
+  "Malli map schema for the optional page and pageSize query parameters."
+  [:map [:page {:optional true} Page] [:page-size {:optional true} PageSize]])

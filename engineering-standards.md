@@ -100,9 +100,32 @@ When building Clojure and ClojureScript applications, use the following librarie
 - Structured error logging with real context, not scattered
   print statements
 
+## Code documentation
+Written for a single maintainer reading the code months later, and
+for reviewers who did not write it.
+- Every namespace has a docstring: what it is responsible for and
+  where it sits in architecture.md (slice, platform component,
+  shared view, browser or frontend server).
+- Every public var (defn, def, defmulti, defprotocol, defmethod
+  groups) has a docstring stating what it does; its arguments,
+  spelling out the keys of map arguments; what it returns; side
+  effects (database writes, I/O, email, logging, state changes);
+  and errors it throws or returns.
+- Private functions get a docstring when the logic is not obvious
+  from the name and a few lines of code.
+- Non-obvious decisions get a short "why" comment at the spot:
+  transactions and stock, idempotency, retries, time zones, caching,
+  security checks, workarounds for library behaviour.
+- Docstrings describe behaviour, not history; the history lives in
+  git and the design documents.
+- Enforced by clj-kondo's `:missing-docstring` linter at warning
+  level in every lint configuration; new public vars without a
+  docstring do not pass review.
+
 ## Non-negotiable vs guideline
 - Non-negotiable: server-side validation and authorization, no
   hardcoded secrets, versioned migrations, idempotent mutations,
   no micro-frontends
 - Guideline, may deviate with a stated reason: vertical-slice
-  folder structure, the specific error shape, the date format
+  folder structure, the specific error shape, the date format,
+  the code documentation rules

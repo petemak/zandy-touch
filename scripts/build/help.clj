@@ -17,13 +17,22 @@
 ;; This file is plain Clojure, so the JVM test (test/frontend/zandy/frontend/
 ;; help_build_test.clj) loads it as namespace `help` and exercises `parse`.
 (ns help
+  "Build step that turns admin-help.md (written by ux-designer, never edited
+  here) into the committed ClojureScript data namespace
+  zandy.frontend.admin.help-data (architecture.md sections 2.4 and 4.1). Runs
+  on the JVM or Babashka at build time only; nothing of it ships to the
+  browser, so there is no Markdown parser at run time. This is plain Clojure
+  so the JVM test (test/frontend/zandy/frontend/help_build_test.clj) can load
+  it as namespace `help` and exercise `parse`."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; Fixed vocabulary
 
-(def roles #{"owner" "support"})
+(def roles
+  "The two staff roles a topic may name in its `roles:` field."
+  #{"owner" "support"})
 
 (def pages
   "Admin page id (design-spec.md section 1) -> route name, the path a `page:`
@@ -44,16 +53,27 @@
    "A12" {:route :admin-staff :path "/admin/staff" :label "Staff"}
    "A13" {:route :admin-help :path "/admin/help" :label "Help"}))
 
-(def required-pages ["A4" "A5" "A6" "A7" "A8" "A9" "A10" "A11" "A12"])
+(def required-pages
+  "Admin page ids that must be covered by at least one topic, so every admin
+  page A4 to A12 has a \"How do I...?\" target."
+  ["A4" "A5" "A6" "A7" "A8" "A9" "A10" "A11" "A12"])
 
-(def owner-only-pages #{"A12"})
+(def owner-only-pages
+  "Admin page ids a support user cannot open (A12 Staff accounts). A topic
+  visible to support may not link to them."
+  #{"A12"})
 
-(def help-path "/admin/help")
+(def help-path
+  "URL path of the help topic list (A13); topic pages are under it."
+  "/admin/help")
 
 ;; ---------------------------------------------------------------------------
 ;; Errors
 
 (defn- fail
+  "Throws ex-info with `msg`; with a `line` number the message is prefixed
+  \"admin-help.md:<line>: \", so a bad source line is easy to find. Used for
+  every format error, which makes the build stop with exit 1."
   ([msg] (throw (ex-info msg {})))
   ([line msg] (throw (ex-info (str "admin-help.md:" line ": " msg) {:line line}))))
 
@@ -71,7 +91,8 @@
 
 (defn parse-inline
   "Text -> vector of strings and inline items: [:strong s], [:help-link id s],
-  [:page-link page-id s]. Links are resolved once all topics are known."
+  [:page-link page-id s]. `line` is the source line, for error messages. Links
+  are resolved once all topics are known."
   [line s]
   (let [m (re-matcher inline-re s)]
     (loop [pos 0 out []]
@@ -89,19 +110,30 @@
 ;; ---------------------------------------------------------------------------
 ;; Blocks
 
-(defn- flush-block [blocks cur]
+(defn- flush-block
+  "Adds the block being collected (`cur`: a paragraph, ordered list or bullet
+  list) to `blocks` as hiccup, parsing its inline items. Returns `blocks`
+  unchanged when there is no current block."
+  [blocks cur]
   (cond-> blocks
     cur (conj (case (:type cur)
                 :p (into [:p] (parse-inline (:n cur) (:text cur)))
                 :ol (into [:ol] (:items cur))
                 :ul (into [:ul] (:items cur))))))
 
-(defn- note-block [line text]
+(defn- note-block
+  "A \"> \" note line as a [:p.help-note ...] block. A leading \"Good to know:\" is
+  made bold."
+  [line text]
   (if-let [[_ rest-text] (re-matches #"Good to know:\s*(\S.*)" text)]
     (into [:p.help-note [:strong "Good to know:"] " "] (parse-inline line rest-text))
     (into [:p.help-note] (parse-inline line text))))
 
-(defn- paragraph-line-problem [s]
+(defn- paragraph-line-problem
+  "Why a plain text line is not allowed in a topic body (leading spaces, other
+  headings, unknown Markdown starters), or nil when it is fine. The format is
+  deliberately small, so anything else fails the build."
+  [s]
   (cond
     (re-find #"^\s" s) "leading spaces are not allowed (no nested lists or code blocks)"
     (re-find #"^#" s) "headings other than `### ` are not allowed in a topic"
@@ -112,8 +144,10 @@
     :else nil))
 
 (defn parse-blocks
-  "Body lines [[line-no text]...] -> vector of hiccup-ready blocks:
-  [:p ...] [:h2 ...] [:ol [:li ...]...] [:ul [:li ...]...] [:p.help-note ...]."
+  "Body lines [[line-no text]...] -> vector of hiccup-ready blocks: [:p ...]
+  [:h2 ...] [:ol [:li ...]...] [:ul [:li ...]...] [:p.help-note ...]. Fails on
+  numbered steps out of order, a list glued to text without a blank line, or
+  any syntax outside the format."
   [lines]
   (loop [ls lines blocks [] cur nil]
     (if-let [[n s] (first ls)]
@@ -167,7 +201,11 @@
 ;; ---------------------------------------------------------------------------
 ;; Topic header: ## id | Title | roles: owner, support | pages: A4, A5 | group: Name
 
-(defn- csv-field [line label s]
+(defn- csv-field
+  "Parses a header field like \"roles: owner, support\" into a vector of trimmed
+  values. `line` is for error messages, `label` the expected prefix, `s` the
+  field text. Fails on a wrong prefix, an empty value or a duplicate."
+  [line label s]
   (let [prefix (str label ":")]
     (when-not (str/starts-with? s prefix)
       (fail line (str "expected `" label ": ...` but found " (pr-str s))))
@@ -176,7 +214,11 @@
       (when (not= (count items) (count (set items))) (fail line (str label " lists a value twice")))
       items)))
 
-(defn parse-header [line s]
+(defn parse-header
+  "Parses a topic header line \"id | Title | roles: ... | pages: ... | group:
+  ...\" into {:id :title :roles :pages :group}. Fails (with the line number) on
+  a wrong field count, a bad id, an unknown role or an unknown page id."
+  [line s]
   (let [parts (mapv str/trim (str/split s #"\|" -1))]
     (when (not= 5 (count parts))
       (fail line (str "a topic header has 5 fields (id | title | roles: | pages: | group:), found " (count parts))))
@@ -229,7 +271,11 @@
             (when (empty? sections) (fail 1 "no topics found"))
             {:title title :sections sections})))))
 
-(defn- parse-section [{:keys [line header lines]}]
+(defn- parse-section
+  "Turns one \"## \" section into a topic map: the header fields, :summary (the
+  first non-blank line, plain text) and :body (parsed blocks). Fails when the
+  summary line is missing or not plain text."
+  [{:keys [line header lines]}]
   (let [head (parse-header line header)
         [[sn ss] & body-lines] (drop-while (comp str/blank? second) lines)]
     (when-not (and sn (not (str/blank? ss)))
@@ -241,13 +287,23 @@
 ;; ---------------------------------------------------------------------------
 ;; Link resolution and whole-file checks
 
-(defn- walk-inline [f x]
+(defn- walk-inline
+  "Applies `f` to every [:help-link ..] and [:page-link ..] item inside `x` (a
+  nested hiccup vector), leaving everything else as it is."
+  [f x]
   (cond
     (and (vector? x) (#{:help-link :page-link} (first x))) (f x)
     (vector? x) (mapv #(walk-inline f %) x)
     :else x))
 
-(defn- resolve-links [topics-by-id topic]
+(defn- resolve-links
+  "Replaces the link items of `topic`'s body with [:a {:href path} text]. Fails
+  when a link names an unknown topic or page, when a topic visible to support
+  links to an owner-only topic, or when it links to an owner-only page. This
+  is the check that keeps support users from being led to pages they cannot
+  open; the browser filters by role again at run time as a convenience (the
+  server enforces real access)."
+  [topics-by-id topic]
   (let [mine (set (:roles topic))]
     (update topic :body
             (fn [body]
@@ -270,7 +326,10 @@
                body)))))
 
 (defn parse
-  "admin-help.md text -> {:title :groups :topics}. Throws ex-info on any problem."
+  "admin-help.md text -> {:title :groups :topics}, where each topic is {:id
+  :title :roles :pages :group :summary :body}. Throws ex-info (with the source
+  line number where possible) on any problem: unknown syntax, duplicate topic
+  id, missing field, bad link, or an admin page A4 to A12 without a topic."
   [text]
   (let [{:keys [title sections]} (split-sections text)
         topics (mapv parse-section sections)
@@ -290,12 +349,21 @@
 ;; ---------------------------------------------------------------------------
 ;; Output: a committed ClojureScript namespace, one block per line so diffs read well
 
-(def target-file "src/frontend/zandy/frontend/admin/help_data.cljs")
-(def source-file "admin-help.md")
+(def target-file
+  "Path of the generated file, relative to the project root."
+  "src/frontend/zandy/frontend/admin/help_data.cljs")
+(def source-file
+  "Path of the Markdown source, relative to the project root."
+  "admin-help.md")
 
-(defn- pr-block [b] (pr-str b))
+(defn- pr-block
+  "Source text of one body block (pr-str), kept one block per line so diffs of
+  the generated file read well."
+  [b] (pr-str b))
 
-(defn- render-topic [t]
+(defn- render-topic
+  "Source text of one topic map for the generated file, one field per line."
+  [t]
   (str "   {:id " (pr-str (:id t)) "\n"
        "    :title " (pr-str (:title t)) "\n"
        "    :roles #{" (str/join " " (map pr-str (sort (:roles t)))) "}\n"
@@ -306,33 +374,52 @@
        "    [" (str/join "\n     " (map pr-block (:body t))) "]}"))
 
 (defn render
-  "Parsed help -> source text of the data namespace."
+  "Parsed help `{:title :groups :topics}` -> source text of the data namespace.
+  The output has the \"GENERATED, do not edit\" header, a namespace docstring
+  and a docstring on each public var, so the generated file also passes the
+  :missing-docstring lint."
   [{:keys [title groups topics]}]
   (str ";; GENERATED by scripts/build/help.clj from admin-help.md. Do not edit.\n"
        ";; Regenerated by scripts/build/build.sh; checked by the help build test.\n"
        "(ns zandy.frontend.admin.help-data\n"
        "  \"Staff help topics (design-spec.md A13) as plain data. Body blocks are\n"
        "  hiccup: [:p ...] [:h2 ...] [:ol [:li ...]] [:ul [:li ...]] [:p.help-note ...];\n"
-       "  links are already [:a {:href path} text].\")\n\n"
-       "(def title " (pr-str title) ")\n\n"
-       "(def groups\n  " (pr-str groups) ")\n\n"
+       "  links are already [:a {:href path} text]. Generated from admin-help.md by\n"
+       "  scripts/build/help.clj; browser code (ClojureScript) read by\n"
+       "  zandy.frontend.admin.help, which filters topics by staff role.\")\n\n"
+       "(def title\n"
+       "  \"Title of the help section (the first heading of admin-help.md).\"\n"
+       "  " (pr-str title) ")\n\n"
+       "(def groups\n"
+       "  \"Topic group names in the order they appear in admin-help.md.\"\n"
+       "  " (pr-str groups) ")\n\n"
        "(def pages\n"
        "  \"Admin page id -> route name, the path a link opens, and its link text.\"\n"
        "  {" (str/join "\n   " (map (fn [[k v]] (str (pr-str k) " {:route " (:route v) " :path " (pr-str (:path v)) " :label " (pr-str (:label v)) "}")) pages)) "})\n\n"
        "(def topics\n"
+       "  \"Help topics in file order. Each is {:id :title :roles #{\\\"owner\\\" \\\"support\\\"} :pages [page ids]\n"
+       "  :group :summary :body [hiccup blocks]}. :roles says who may read the topic.\"\n"
        "  [" (str/join "\n" (let [ts (map render-topic topics)] (cons (str/triml (first ts)) (rest ts)))) "])\n"))
 
 (defn generate
-  "Read admin-help.md under `root` and return the data namespace text."
+  "Reads admin-help.md under `root` and returns the text of the data namespace.
+  Pure apart from reading the file."
   [root]
   (render (parse (slurp (io/file root source-file)))))
 
 (defn up-to-date?
+  "True when the generated file under `root` exists and equals what `generate`
+  would write now. Used by --check (and so by CI) to catch a forgotten
+  regeneration."
   [root]
   (let [f (io/file root target-file)]
     (and (.exists f) (= (generate root) (slurp f)))))
 
-(defn -main [& args]
+(defn -main
+  "Entry point. With no arguments it regenerates help_data.cljs (side effect:
+  writes the file). With --check it only compares and exits 1 when the file is
+  out of date. Format errors are printed to stderr and exit 1."
+  [& args]
   (let [root (-> (io/file *file*) .getAbsoluteFile .getParentFile .getParentFile .getParent)]
     (try
       (if (= ["--check"] args)

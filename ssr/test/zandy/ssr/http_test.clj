@@ -1,4 +1,7 @@
 (ns zandy.ssr.http-test
+  "Tests of the frontend server's request handling against the dev stub API:
+  pages, status codes, cache headers, redirects, robots, sitemap and the
+  unavailable page. Runs on the JVM (clojure -M:test from ssr/)."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]
             [zandy.ssr.api-client :as api-client]
@@ -6,7 +9,10 @@
             [zandy.ssr.http :as http]
             [zandy.ssr.stub-api :as stub]))
 
-(def ^:dynamic *ctx* nil)
+(def ^:dynamic *ctx*
+  "The request context ({:config :api}) of the running test server; bound by
+  the fixture."
+  nil)
 
 (defn- ctx-for [api-port]
   (let [cfg (config/load-config {:api-base-url (str "http://127.0.0.1:" api-port)

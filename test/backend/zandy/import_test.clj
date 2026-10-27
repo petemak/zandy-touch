@@ -12,6 +12,7 @@
 (defn- codes [row k] (set (map :code (get row k))))
 
 (def example-csv
+  "A small import file used by the tests: one new product, one update of an existing SKU (with an ignored opening stock) and one row with a bad price."
   (str "sku,name,brand,ownBrand,category,price,shortDescription,openingStock\n"
        "NEW-1,New One,Zandy Touch,yes,Body care,\"85,000\",Short,12\n"
        "OLD-1,,,,,99 000,,50\n"

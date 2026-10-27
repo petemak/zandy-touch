@@ -36,7 +36,9 @@
 
 ;; ---- cart validation -------------------------------------------------------------------------------
 
-(defn cart-validation [{:keys [ctx parameters]}]
+(defn cart-validation
+  "Handler for POST /api/cart-validations (public). Body: {:items [{:product-id :quantity}]}. Returns 200 with each line's purchasability, price and problem (unavailable, soldOut, insufficientStock) and the subtotal of purchasable lines. Throws validationFailed for quantities over the per-line maximum or repeated products. Read only."
+  [{:keys [ctx parameters]}]
   (let [items (get-in parameters [:body :items])
         problems (concat (quantity-problems ctx items "items") (duplicate-problems items "items"))
         _ (when (seq problems) (errors/validation-failed (vec problems)))
@@ -114,9 +116,15 @@
      :event-id (random-uuid)
      :movement-ids (vec (repeatedly n-lines random-uuid))}))
 
-(defn place-order [{:keys [ctx parameters] :as req}]
+(defn place-order
+  "Handler for POST /api/orders (public, rate limited, idempotent). Body: PlaceOrder.
+  Returns 201 {:order :agreementAcceptance} (stored for replay as 200). The same Idempotency-Key replays the original order; a filled honeypot (:website) returns an order-shaped 201 that stores nothing.
+  Throws validationFailed (quantity, duplicate product, delivery city), agreementVersionOutdated (409, details give the current version), cartOutdated (409, per-line details).
+  Side effects: one atomic Datomic transaction (order, stock, movements, acceptance, outbox messages for the owner alert and the optional customer receipt); an info log line."
+  [{:keys [ctx parameters] :as req}]
   (let [body (:body parameters)
         now (util/now ctx)]
+    ;; Honeypot: a filled hidden field means a bot. Answer with a believable order so it learns nothing; nothing is stored or emailed.
     (if (some? (:website body))
       {:status 201 :body (fake-order ctx body now)}
       (let [problems (concat (quantity-problems ctx (:items body) "items") (duplicate-problems (:items body) "items"))
@@ -138,7 +146,9 @@
                 outcome (try (db/place-order! (:conn ctx) spec) :placed
                              (catch Throwable ex
                                (cond
+                                 ;; The idempotency key is stored on the order itself (unique), in the same transaction: a concurrent duplicate loses the race here and gets the original order back.
                                  (unique-conflict-on ex ":order/idempotency-key") :replay
+                                 ;; Order numbers are random; on the rare collision draw another (up to 5 times).
                                  (and (unique-conflict-on ex ":order/number") (< attempt 5)) :retry
                                  :else (throw ex))))]
             (case outcome
@@ -148,21 +158,27 @@
                          :body {:order (logic/order-view o) :agreement-acceptance (logic/acceptance-view (:acceptance o))}})
               :placed (let [o (db/order-by-id-fresh (:conn ctx) order-id)]
                         (log/info :order-placed {:order-id order-id :lines (count (:items body))})
+                        ;; The first response is 201; a replay of the same key is stored and served as 200.
                         {:status 201 :replay-status 200
                          :body {:order (logic/order-view o) :agreement-acceptance (logic/acceptance-view (:acceptance o))}}))))))))
 
 ;; ---- tracking ---------------------------------------------------------------------------------------------
 
-(defn track-order [{:keys [ctx parameters]}]
+(defn track-order
+  "Handler for POST /api/order-trackings (public, rate limited). Body: {:order-number :phone}. Returns 200 with the customer-safe tracking view. A wrong number or phone gives the same orderNotFound (404) so orders cannot be probed."
+  [{:keys [ctx parameters]}]
   (let [{:keys [order-number phone]} (:body parameters)
         o (db/order-by-number-fresh (:conn ctx) (str/upper-case order-number))]
+    ;; Same error for "no such order" and "wrong phone": the endpoint must not reveal which order numbers exist.
     (if (and o (= (:customer-phone o) (v/normalize-phone phone)))
       {:status 200 :body (logic/tracking-view o)}
       (errors/fail! :orderNotFound "We could not find an order with those details."))))
 
 ;; ---- staff -----------------------------------------------------------------------------------------------------
 
-(defn admin-list [{:keys [ctx parameters]}]
+(defn admin-list
+  "Handler for GET /api/admin/orders (staff). Query: status, q, sort, page, pageSize (default 25). Returns 200 with a page of list rows plus :counts per status (counted over all orders, not just the page)."
+  [{:keys [ctx parameters]}]
   (let [q (:query parameters)
         orders (db/all-orders (db/current-db (:conn ctx)))
         phone (some-> (:q q) v/normalize-phone)
@@ -186,12 +202,17 @@
   (let [id (v/parse-uuid-or-404 id-str)]
     (or (db/order-by-id-fresh (:conn ctx) id) (errors/fail! :notFound "Order not found."))))
 
-(defn admin-get [{:keys [ctx parameters]}]
+(defn admin-get
+  "Handler for GET /api/admin/orders/:id (staff). Returns 200 {:order :agreementAcceptance :history}; notFound (404) for a bad or unknown id."
+  [{:keys [ctx parameters]}]
   {:status 200 :body (admin-order-body ctx (find-order! ctx (get-in parameters [:path :id])))})
 
 (def ^:private open-statuses #{:placed :confirmed :approvedForDelivery})
 
-(defn admin-patch [{:keys [ctx parameters user]}]
+(defn admin-patch
+  "Handler for PATCH /api/admin/orders/:id (staff). Body: {:version, :delivery-fee and/or :staff-note}. Returns 200 {:order}.
+  Throws validationFailed (nothing to change), invalidStatusTransition (closed order), versionConflict (409). Side effect: one transaction."
+  [{:keys [ctx parameters user]}]
   (let [body (:body parameters)
         o (find-order! ctx (get-in parameters [:path :id]))]
     (when-not (or (contains? body :delivery-fee) (contains? body :staff-note))
@@ -203,15 +224,21 @@
     (try (db/patch-order! (:conn ctx) o {:delivery-fee (:delivery-fee body) :staff-note (:staff-note body)
                                           :user-eid (:eid user) :now (util/now ctx)})
          (catch Throwable ex
+           ;; A failed :db/cas on :order/version means someone else changed the order after we read it.
            (if (str/includes? (str (ex-message ex) (some-> ex ex-cause ex-message)) "cas")
              (errors/fail! :versionConflict "This order was changed by someone else. Please reload it.")
              (throw ex))))
     {:status 200 :body {:order (logic/admin-order-view (db/order-by-id-fresh (:conn ctx) (:id o)))}}))
 
-(defn status-change [{:keys [ctx parameters user]}]
+(defn status-change
+  "Handler for POST /api/admin/orders/:id/status-changes (staff). Body: StatusChange.
+  Returns 201 {:order :stockRestored} when the status changed, 200 when the order already had that status (nothing written). Throws validationFailed (paymentMethodUsed for delivered, cancelReason for cancelled), versionConflict, invalidStatusTransition, deliveryFeeRequired (409).
+  Side effect: one :orders/change-status transaction (status, history entry, stock restore on cancellation)."
+  [{:keys [ctx parameters user]}]
   (let [body (:body parameters)
         o (find-order! ctx (get-in parameters [:path :id]))
         status (keyword (:status body))]
+    ;; Asking for the current status is a successful no-op (a double click or a retry), reported as 200 rather than an error.
     (if (= status (:status o))
       {:status 200 :body {:order (logic/admin-order-view o) :stock-restored false}}
       (let [problems (cond-> []
@@ -227,11 +254,13 @@
                                           :event-id (random-uuid)
                                           :movement-ids (vec (repeatedly (count (:lines o)) random-uuid))}))
         (let [after (db/order-by-id-fresh (:conn ctx) (:id o))]
+          ;; 201 when this call really changed the order (its version moved), 200 when the status was already reached by a concurrent request.
           {:status (if (> (:version after) (:version o)) 201 200)
            :body {:order (logic/admin-order-view after)
                   :stock-restored (and (not (:stock-restored? o)) (:stock-restored? after))}})))))
 
 (def routes
+  "Route data for the orders slice. Order placement is :idempotent? and rate limited; tracking is rate limited; the rest of the admin endpoints are staff-only."
   [{:method :post :path "/api/cart-validations" :name :orders/cart-validation :access :public
     :parameters {:body schema/CartValidation} :handler cart-validation}
    {:method :post :path "/api/orders" :name :orders/place :access :public :idempotent? true

@@ -8,9 +8,13 @@
             [zandy.frontend.admin.help-data :as data]
             [zandy.shared.ui.core :as ui]))
 
-(def list-path "/admin/help")
+(def list-path
+  "URL path of the help topic list (A13)."
+  "/admin/help")
 
-(defn topic-path [id] (str list-path "/" id))
+(defn topic-path
+  "URL path of the help topic `id`."
+  [id] (str list-path "/" id))
 
 ;; ---------------------------------------------------------------------------
 ;; Role filter and lookups
@@ -20,10 +24,18 @@
   [topic role]
   (contains? (:roles topic) role))
 
-(defn visible-topics [role]
+(defn visible-topics
+  "Topics `role` may read, in file order. Argument: \"owner\" or \"support\". This
+  filter is a UI convenience, not a security control: the help text ships
+  inside the app bundle. It keeps staff from reading guidance for things they
+  cannot do; real access to data and actions is enforced by the server."
+  [role]
   (filterv #(can-see? % role) data/topics))
 
-(defn find-topic [id]
+(defn find-topic
+  "The topic with `id`, or nil. Does not check the role; use can-see? or
+  topic-view."
+  [id]
   (first (filter #(= id (:id %)) data/topics)))
 
 (defn grouped
@@ -88,7 +100,9 @@
          (keep find-topic)
          (filter #(and (not= (:id %) (:id topic)) (can-see? % role))))))
 
-(def ^:private required-page-ids #{"A4" "A5" "A6" "A7" "A8" "A9" "A10" "A11" "A12"})
+(def ^:private required-page-ids
+  "Admin pages that get a \"Related pages\" link from topics (A4 to A12)."
+  #{"A4" "A5" "A6" "A7" "A8" "A9" "A10" "A11" "A12"})
 
 (defn related-pages
   "The staff pages a topic is about as [label path], one per path."
@@ -99,7 +113,9 @@
        (map (juxt :label :path))
        (reduce (fn [acc [label path]] (if (some #(= path (second %)) acc) acc (conj acc [label path]))) [])))
 
-(defn audience [topic]
+(defn audience
+  "Label for a topic: \"Shop owner only\" or \"Shop owner and support staff\"."
+  [topic]
   (if (= #{"owner"} (:roles topic)) "Shop owner only" "Shop owner and support staff"))
 
 ;; ---------------------------------------------------------------------------
@@ -144,12 +160,18 @@
    (ui/notice {:kind :info} "This topic is for the shop owner.")
    [:p (back-link)]])
 
-(defn not-found-view []
+(defn not-found-view
+  "A13 view for a topic id that does not exist: a short notice and a Back to
+  Help button. Returns hiccup."
+  []
   [:div.help
    [:h1.page-title "Help"]
    (ui/notice {:kind :info} "We could not find that help topic.")
    [:p (back-link)]])
 
+;; Role check on a direct link: a topic the role may not read shows a short
+;; notice (not-allowed-view) and none of its text is rendered, so a pasted
+;; link cannot show owner-only guidance to support staff in the UI.
 (defn topic-view
   "A13 for one topic. Only the topic's own data is read after the role check."
   [role topic-id]

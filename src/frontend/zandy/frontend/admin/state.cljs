@@ -1,20 +1,36 @@
 (ns zandy.frontend.admin.state
-  "Pure action handlers for the staff area. Same shape as zandy.frontend.state:
-  (handle state action) -> {:state :fx}. Every request goes through the
-  server's authorization; hiding a button here is convenience only."
+  "Pure action handlers for the staff area A1 to A13 (architecture.md section
+  2.4, `frontend.admin.*`). Browser only (ClojureScript). Same shape as
+  zandy.frontend.state, whose `handle` multimethod it extends with the
+  :admin/* and :help/print actions: (handle state action) -> {:state :fx}. The
+  session ({:user :csrf}) and page data live under (:admin state); forms under
+  :forms. Every request goes through the server's authorization; hiding a
+  button or redirecting here is a convenience, never the security check."
   (:require [clojure.string :as str]
             [zandy.frontend.admin.help :as help]
             [zandy.frontend.state :as s :refer [handle ret]]
             [zandy.shared.format :as fmt]
             [zandy.shared.routes :as routes]))
 
-(def account-path "/admin/account")
+(def account-path
+  "URL of A11 My account, where a user with a temporary password is sent first."
+  "/admin/account")
 
-(defn session [state] (get-in state [:admin :session]))
-(defn role [state] (get-in (session state) [:user :role]))
+(defn session
+  "The signed-in staff session {:user {:name :email :role :mustChangePassword}
+  :csrf token} from `state`, or nil when signed out or not yet checked."
+  [state] (get-in state [:admin :session]))
+(defn role
+  "Role of the signed-in user (\"owner\" or \"support\"), or nil."
+  [state] (get-in (session state) [:user :role]))
 
-(def drafts-page-size 100)
-(def drafts-max-pages 5)
+(def drafts-page-size
+  "Page size used when loading drafts for import step 3."
+  100)
+(def drafts-max-pages
+  "Most draft pages loaded (5 pages of 100, which is the most one import can
+  hold)."
+  5)
 
 (def drafts-request
   "Step 3 of the import lists drafts. The first page loads with the route; more
@@ -56,6 +72,8 @@
 (defn- loading [state]
   (assoc-in state [:admin :data] (into {} (map (fn [k] [k {:status :loading}])) (keys (route-requests state)))))
 
+;; A temporary password must be changed first: the server answers 403
+;; passwordChangeRequired for everything else, so go straight to A11.
 (defn- landing-path
   "A temporary password must be changed before anything else."
   [user]
@@ -83,6 +101,9 @@
   (when (nil? (categories state))
     [:fx/request {:path "/api/categories"} [:admin/categories-loaded]]))
 
+;; [:admin/categories-loaded response] Caches GET /api/categories for the
+;; session so category names show instead of slugs. A failure is ignored; the
+;; next admin page tries again.
 (defmethod handle :admin/categories-loaded [state [_ {:keys [status body]}]]
   (if (and (= 200 status) (vector? (:items body)))
     (ret (assoc-in state [:admin :categories] (:items body)))
@@ -111,6 +132,14 @@
                     (assoc-in [:forms :product] {:values (product-values {}) :init :new}))]
         (ret state (into [[:fx/head] (categories-fx state)] (load-fx state)))))))
 
+;; [:admin/enter] Dispatched by route-enter on every admin route. With a
+;; session it loads the page data (enter-with-session). Without one it asks
+;; GET /api/auth/sessions/current whether a session cookie is still valid: if
+;; so the user continues, otherwise A1 shows the sign-in page. Role checks
+;; here are a convenience; the server enforces access.
+;; Why the session check: the session cookie is HttpOnly, so the browser
+;; cannot see whether it is still valid. One cheap GET tells it, and avoids
+;; showing the sign-in form to someone who is already signed in.
 (defmethod handle :admin/enter [state _]
   (let [{:keys [data]} (:route state)]
     (cond
@@ -123,6 +152,9 @@
       :else
       (ret state [[:fx/request {:path "/api/auth/sessions/current"} [:admin/session-checked]]]))))
 
+;; [:admin/session-checked response] 200: stores the user and CSRF token
+;; (sign-in pages then go to /admin). Not 200 on a protected page: redirect to
+;; the sign-in page.
 (defmethod handle :admin/session-checked [state [_ {:keys [status body]}]]
   (if (= 200 status)
     (let [st (assoc-in state [:admin :session] {:user (:user body) :csrf (:csrfToken body)})]
@@ -133,6 +165,10 @@
       (ret (assoc-in state [:admin :checked?] true) [[:fx/head]])
       (to-login state))))
 
+;; [:admin/loaded key response] One of the page's data requests came back. 401
+;; sends the user to sign in; 403 passwordChangeRequired sends them to A11;
+;; 200 stores the body (the first load of a product also initialises the
+;; product form); other statuses store an error shown with a Try again button.
 (defmethod handle :admin/loaded [state [_ k {:keys [status body]}]]
   (cond
     (= 401 status) (to-login state)
@@ -147,6 +183,8 @@
                (when (= :drafts k) (drafts-next-page-fx body))]))
     :else (ret (assoc-in state [:admin :data k] {:status :error :error (get-in body [:error :message])}))))
 
+;; [:admin/reload] Reloads the data of the current admin page (after a change
+;; or a version conflict).
 (defmethod handle :admin/reload [state _]
   (ret (loading state) (load-fx state)))
 
@@ -156,6 +194,8 @@
 (defn- form-err [state form-id msg]
   (-> state (assoc-in [:forms form-id :status] :idle) (assoc-in [:forms form-id :errors :form] msg)))
 
+;; [:admin/login] A1: checks both fields are filled, then POST
+;; /api/auth/sessions.
 (defmethod handle :admin/login [state _]
   (let [{:keys [email password]} (get-in state [:forms :login :values])]
     (if (or (str/blank? email) (str/blank? password))
@@ -164,6 +204,9 @@
            [[:fx/request {:method :post :path "/api/auth/sessions" :body {:email (str/trim email) :password password}}
              [:admin/login-result]]]))))
 
+;; [:admin/login-result response] 201 stores the session and goes to /admin
+;; (or to A11 when a temporary password must be changed); 401 and 429 show
+;; form messages.
 (defmethod handle :admin/login-result [state [_ {:keys [status body]}]]
   (cond
     (= 201 status)
@@ -174,13 +217,17 @@
     (= 429 status) (ret (form-err state :login "Too many attempts. Please wait a few minutes and try again."))
     :else (ret (form-err state :login "We could not sign you in right now. Please try again."))))
 
+;; [:admin/logout] Clears the session in the UI at once and sends DELETE
+;; /api/auth/sessions/current with the CSRF token.
 (defmethod handle :admin/logout [state _]
   (ret (-> state (assoc-in [:admin :session] nil) (assoc-in [:admin :data] {}))
        [[:fx/request {:method :delete :path "/api/auth/sessions/current" :csrf (get-in state [:admin :session :csrf])} [:admin/logged-out]]]))
 
+;; [:admin/logged-out] Goes to the sign-in page.
 (defmethod handle :admin/logged-out [state _]
   (ret (assoc-in state [:admin :checked?] true) [[:fx/dispatch [:nav/go "/admin/login"]]]))
 
+;; [:admin/forgot] A2: POST /api/auth/password-resets with the email.
 (defmethod handle :admin/forgot [state _]
   (let [email (get-in state [:forms :forgot :values :email])]
     (if (str/blank? email)
@@ -188,9 +235,14 @@
       (ret (assoc-in state [:forms :forgot :status] :submitting)
            [[:fx/request {:method :post :path "/api/auth/password-resets" :body {:email (str/trim email)}} [:admin/forgot-result]]]))))
 
+;; [:admin/forgot-result response] Always shows the same "if that address
+;; belongs to the owner" message, whatever the answer, so it never reveals
+;; which addresses exist.
 (defmethod handle :admin/forgot-result [state _]
   (ret (assoc-in state [:forms :forgot] {:status :done})))
 
+;; [:admin/reset] A3: checks the new password (at least 10 characters), then
+;; PUT /api/auth/password-resets/{token} with the token from the URL.
 (defmethod handle :admin/reset [state _]
   (let [pw (get-in state [:forms :reset :values :password])
         token (get-in state [:route :query :token])]
@@ -199,11 +251,15 @@
       :else (ret (assoc-in state [:forms :reset :status] :submitting)
                  [[:fx/request {:method :put :path (str "/api/auth/password-resets/" token) :body {:newPassword pw}} [:admin/reset-result]]]))))
 
+;; [:admin/reset-result response] 200 shows success; anything else says the
+;; link is no longer valid.
 (defmethod handle :admin/reset-result [state [_ {:keys [status]}]]
   (if (= 200 status)
     (ret (assoc-in state [:forms :reset] {:status :done}))
     (ret (form-err state :reset "This link is no longer valid. Ask for a new one."))))
 
+;; [:admin/change-password] A11: validates, then PUT
+;; /api/admin/account/password.
 (defmethod handle :admin/change-password [state _]
   (let [{:keys [current new]} (get-in state [:forms :password :values])]
     (if (or (str/blank? current) (< (count (str new)) 10))
@@ -214,6 +270,8 @@
            [[:fx/request {:method :put :path "/api/admin/account/password" :body {:currentPassword current :newPassword new}}
              [:admin/change-password-result]]]))))
 
+;; [:admin/change-password-result response] 200 clears the must-change flag in
+;; the session; 401 wrong current password; 422 shows the server's reason.
 (defmethod handle :admin/change-password-result [state [_ {:keys [status body]}]]
   (case status
     200 (ret (-> state (assoc-in [:forms :password] {:status :done})
@@ -225,21 +283,29 @@
 ;; ---------------------------------------------------------------------------
 ;; Generic mutations with an idempotency key
 
+;; [:admin/key-ready form-id action key] A fresh idempotency key arrived:
+;; stores it in the form and re-runs `action`.
 (defmethod handle :admin/key-ready [state [_ form-id action key]]
   (handle (assoc-in state [:forms form-id :key] key) action))
 
 (defn- conflict-banner [state]
   (assoc-in state [:admin :ui :conflict] "This record was updated by someone else a moment ago. The latest version has been loaded; please check it and try again."))
 
+;; [:admin/dismiss-conflict] Hides the version-conflict banner.
 (defmethod handle :admin/dismiss-conflict [state _]
   (ret (assoc-in state [:admin :ui :conflict] nil)))
 
 ;; ---------------------------------------------------------------------------
 ;; Orders
 
+;; [:admin/order-fee-input value] Keeps the typed delivery fee in the fee
+;; form.
 (defmethod handle :admin/order-fee-input [state [_ v]]
   (ret (assoc-in state [:forms :fee :values :fee] v)))
 
+;; [:admin/order-save] A5: validates the fee (0 to 1,000,000 UGX) and PATCHes
+;; the order with its :version (optimistic locking) and the fee and staff
+;; note.
 (defmethod handle :admin/order-save [state _]
   (let [order (get-in state [:admin :data :order :body :order])
         {:keys [fee note]} (get-in state [:forms :fee :values])
@@ -257,6 +323,8 @@
                                   (some? note) (assoc :staffNote note))}
              [:admin/order-saved]]]))))
 
+;; [:admin/order-saved response] 200 updates the order; 409 shows the conflict
+;; banner and reloads the latest version; 401 goes to sign in.
 (defmethod handle :admin/order-saved [state [_ {:keys [status body]}]]
   (case status
     200 (ret (-> state (assoc-in [:admin :data :order :body :order] (:order body))
@@ -265,13 +333,19 @@
     401 (to-login state)
     (ret (form-err state :fee (or (get-in body [:error :message]) "Could not save.")))))
 
+;; [:admin/dialog dialog] Opens a modal dialog (status change, stock, archive,
+;; staff reset) and focuses its title.
 (defmethod handle :admin/dialog [state [_ dialog]]
   (ret (-> state (assoc-in [:admin :ui :dialog] dialog) (assoc-in [:forms :dialog] {:values (:defaults dialog)}))
        [[:fx/focus "dialog-title"]]))
 
+;; [:admin/dialog-close] Closes the dialog and forgets its form.
 (defmethod handle :admin/dialog-close [state _]
   (ret (-> state (assoc-in [:admin :ui :dialog] nil) (assoc :forms (dissoc (:forms state) :dialog)))))
 
+;; [:admin/status-change target-status] Confirm in the status dialog:
+;; delivered needs the payment method, cancelled needs a reason; then POST
+;; /api/admin/orders/{id}/status-changes with the order :version.
 (defmethod handle :admin/status-change [state [_ target]]
   (let [order (get-in state [:admin :data :order :body :order])
         v (get-in state [:forms :dialog :values])
@@ -288,6 +362,10 @@
                                   (= "cancelled" target) (assoc :cancelReason (str/trim (:reason v))))}
              [:admin/status-changed target]]]))))
 
+;; [:admin/status-changed target response] 200/201 closes the dialog, shows a
+;; notice (including whether stock was returned) and reloads. 409
+;; versionConflict reloads with the conflict banner; other 409s show the
+;; server message.
 (defmethod handle :admin/status-changed [state [_ target {:keys [status body]}]]
   (let [code (get-in body [:error :code])]
     (cond
@@ -311,14 +389,22 @@
 ;; Products and stock
 
 (def product-field-map
+  "API error `details` field names (api-contract.md 8.1) -> product form keys,
+  to show server errors next to the right field."
   {"name" :name "brand" :brand "categorySlug" :category "price" :price "sku" :sku "status" :status "images" :images})
 
-(defn product-values [p]
+(defn product-values
+  "Product form values from an admin product map (GET
+  /api/admin/products/{id}), or {} for a new product. Numbers become text for
+  the inputs; a new product defaults to draft with stock \"0\". Pure."
+  [p]
   {:name (:name p) :brand (:brand p) :own-brand? (boolean (:isOwnBrand p)) :category (:categorySlug p)
    :sku (:sku p) :price (some-> (:price p) str) :short (:shortDescription p) :description (:description p)
    :size (:size p) :how-to-use (:howToUse p) :ingredients (:ingredients p) :featured? (boolean (:featured p))
    :status (or (:status p) "draft") :stock "0" :images (vec (map #(select-keys % [:id :alt :urls]) (:images p)))})
 
+;; [:admin/product-init product] Fills the product form from the loaded
+;; product (or a blank form for a new one).
 (defmethod handle :admin/product-init [state [_ p]]
   (ret (-> state
            (assoc-in [:forms :product] {:values (product-values p) :init (or (:id p) :new)})
@@ -346,6 +432,9 @@
                                                                                                     "A product needs at least one picture before it can be published. Save it as a draft, add pictures, then publish."
                                                                                                     "A product needs at least one picture before it can be published."))))
 
+;; [:admin/product-save product-id] A7/A8: validates, then POST (new product,
+;; with an idempotency key) or PATCH (existing, with :version)
+;; /api/admin/products.
 (defmethod handle :admin/product-save [state [_ product-id :as action]]
   (let [form (get-in state [:forms :product])
         v (:values form)
@@ -362,6 +451,9 @@
                             :body (assoc (product-body v false) :version (get-in state [:admin :data :product :body :version]))})
              [:admin/product-saved new?]]]))))
 
+;; [:admin/product-saved new? response] 200/201 shows a notice; a new product
+;; navigates to its edit page, an existing one reloads. 409 conflict banner
+;; and reload; 422 maps details to fields.
 (defmethod handle :admin/product-saved [state [_ new? {:keys [status body]}]]
   (let [_ nil]
     (cond
@@ -380,9 +472,13 @@
       (= 401 status) (to-login state)
       :else (ret (form-err state :product "We could not save the product. Please try again.")))))
 
+;; [:admin/product-image-remove i] Removes picture `i` from the form; it is
+;; deleted when the product or pictures are saved.
 (defmethod handle :admin/product-image-remove [state [_ i]]
   (ret (update-in state [:forms :product :values :images] (fn [v] (vec (concat (subvec v 0 i) (subvec v (inc i))))))))
 
+;; [:admin/product-image-move i delta] Moves picture `i` earlier (-1) or later
+;; (+1); the first picture is the main one.
 (defmethod handle :admin/product-image-move [state [_ i d]]
   (ret (update-in state [:forms :product :values :images]
                   (fn [v] (let [j (+ i d)]
@@ -390,13 +486,18 @@
                               (-> v (assoc i (nth v j)) (assoc j (nth v i)))
                               v))))))
 
+;; [:admin/product-image-alt i text] Sets the alt text of picture `i`.
 (defmethod handle :admin/product-image-alt [state [_ i alt]]
   (ret (assoc-in state [:forms :product :values :images i :alt] alt)))
 
+;; [:admin/archive id] Closes the dialog and sends DELETE
+;; /api/admin/products/{id} (archive, not delete).
 (defmethod handle :admin/archive [state [_ id]]
   (ret (assoc-in state [:admin :ui :dialog] nil)
        [[:fx/request {:method :delete :path (str "/api/admin/products/" id)} [:admin/archived]]]))
 
+;; [:admin/archived response] 204 shows a notice and returns to the list or
+;; reloads.
 (defmethod handle :admin/archived [state [_ {:keys [status]}]]
   (if (= 204 status)
     (ret (assoc-in state [:admin :ui :notice] "Product removed from the shop (archived).")
@@ -408,6 +509,7 @@
 ;; carry `version`, so a restore started there reads the product first.
 
 (def restore-reason-text
+  "Staff-friendly sentence for each restore/publish rejection code."
   {"priceRequired" "It has no price."
    "imageRequired" "It has no picture."
    "categoryRequired" "It has no category."})
@@ -428,6 +530,9 @@
                 :body {:version version :status as-status}}
    [:admin/restored id as-status nm]])
 
+;; [:admin/restore id name as-status] Restores an archived product by PATCH
+;; status published (or draft). The products list has no :version, so it first
+;; reads the product.
 (defmethod handle :admin/restore [state [_ id nm as-status]]
   (let [as-status (or as-status "published")
         loaded (get-in state [:admin :data :product :body])
@@ -436,6 +541,8 @@
       (ret state [(restore-request id (:version loaded) as-status nm)])
       (ret state [[:fx/request {:path (str "/api/admin/products/" id)} [:admin/restore-read id nm as-status]]]))))
 
+;; [:admin/restore-read id name as-status response] The product was read;
+;; sends the restore PATCH with its :version.
 (defmethod handle :admin/restore-read [state [_ id nm as-status {:keys [status body]}]]
   (cond
     (= 200 status) (ret state [(restore-request id (:version body) as-status nm)])
@@ -443,6 +550,9 @@
     :else (ret (-> state (assoc-in [:admin :ui :restoring] nil)
                    (assoc-in [:admin :ui :notice] "Could not restore the product. Please try again.")))))
 
+;; [:admin/restored id as-status name response] 200 shows a notice and
+;; reloads; 422 for a publish shows the reasons with the offer to restore as a
+;; draft; 409 conflict banner.
 (defmethod handle :admin/restored [state [_ id as-status nm {:keys [status body]}]]
   (let [state (assoc-in state [:admin :ui :restoring] nil)]
     (cond
@@ -465,9 +575,14 @@
       (= 401 status) (to-login state)
       :else (ret (assoc-in state [:admin :ui :notice] "Could not restore the product. Please try again.")))))
 
+;; [:admin/restore-dismiss] Hides the restore-rejected reasons.
 (defmethod handle :admin/restore-dismiss [state _]
   (ret (assoc-in state [:admin :ui :restore-rejected] nil)))
 
+;; [:admin/stock-submit product-id current-quantity] Stock dialog: turns Add /
+;; Remove / Set-to-counted into a delta, rejects a zero change, gets an
+;; idempotency key, then POST /api/admin/products/{id}/stock-movements with
+;; expectedQuantity (so a concurrent change is detected).
 (defmethod handle :admin/stock-submit [state [_ product-id current :as action]]
   (let [form (get-in state [:forms :dialog])
         {:keys [mode qty reason note]} (:values form)
@@ -487,6 +602,9 @@
                                   (not (str/blank? note)) (assoc :note note))}
              [:admin/stock-result]]]))))
 
+;; [:admin/stock-result response] 201 closes the dialog and reloads; 409 means
+;; the stock changed meanwhile and reloads the latest count; 422 shows the
+;; reason.
 (defmethod handle :admin/stock-result [state [_ {:keys [status body]}]]
   (cond
     (= 201 status) (ret (-> state (assoc-in [:admin :ui :dialog] nil) (update :forms dissoc :dialog)
@@ -505,9 +623,15 @@
 ;; Pictures: checks shared by A8 (one product) and A9 (bulk)
 
 (def batch-size "Files per request to POST /api/admin/product-images (api-contract.md 8.2)." 20)
-(def max-picture-bytes (* 5 1024 1024))
-(def max-csv-bytes (* 1024 1024))
-(def max-product-images 6)
+(def max-picture-bytes
+  "Largest picture accepted (5 MB), the same limit the server applies."
+  (* 5 1024 1024))
+(def max-csv-bytes
+  "Largest CSV accepted for import (1 MB)."
+  (* 1024 1024))
+(def max-product-images
+  "Most pictures one product can have (6)."
+  6)
 
 (defn- extension [file-name]
   (some-> (re-find #"\.([^.]+)$" (str file-name)) second str/lower-case))
@@ -547,6 +671,8 @@
 ;; ---------------------------------------------------------------------------
 ;; A8: pictures of one product (ProductImageManager)
 
+;; [:admin/product-images-picked files] A8: checks the picked files locally
+;; (type, size, at most 6 pictures in all), then uploads the acceptable ones.
 (defmethod handle :admin/product-images-picked [state [_ files]]
   (let [product (get-in state [:admin :data :product :body])
         room (- max-product-images (count (get-in state [:forms :product :values :images])))
@@ -560,10 +686,19 @@
       :else (ret (assoc-in state [:forms :product-images] {:status :uploading :items local})
                  [[:fx/uuid [:admin/product-images-send (:id product) accepted]]]))))
 
+;; [:admin/product-images-send product-id files key] Uploads the files to POST
+;; /api/admin/products/{id}/images with the idempotency key.
 (defmethod handle :admin/product-images-send [state [_ product-id files key]]
   (ret state [[:fx/upload-files {:path (str "/api/admin/products/" product-id "/images") :files files :idempotency-key key}
                [:admin/product-images-result files]]]))
 
+;; [:admin/product-images-result files response] 200 adds the attached
+;; pictures to the form and replaces the loaded product with the returned one;
+;; other statuses become per-file failures that can be retried.
+;; Version bump: every upload changes the product on the server (its :version
+;; increases). The response carries the updated product, and storing it here
+;; keeps :version current. Without that, the next Save or Save pictures would
+;; send the old version and be refused with 409 versionConflict.
 (defmethod handle :admin/product-images-result [state [_ files {:keys [status body] :as result}]]
   (let [local (get-in state [:forms :product-images :items])]
     (cond
@@ -579,6 +714,8 @@
       :else (ret (assoc-in state [:forms :product-images]
                            {:items (into (vec local) (failed-batch-results files result))})))))
 
+;; [:admin/product-images-save] PATCHes only the pictures (order, alt text,
+;; removals) with the product :version.
 (defmethod handle :admin/product-images-save [state _]
   (let [product (get-in state [:admin :data :product :body])
         images (get-in state [:forms :product :values :images])]
@@ -590,6 +727,8 @@
                                  :images (mapv (fn [i] (cond-> {:id (:id i)} (not (str/blank? (:alt i))) (assoc :alt (:alt i)))) images)}}
              [:admin/product-images-saved]]]))))
 
+;; [:admin/product-images-saved response] 200 stores the saved product; 409
+;; conflict banner and reload; 422 shows the reason.
 (defmethod handle :admin/product-images-saved [state [_ {:keys [status body]}]]
   (cond
     (= 200 status) (ret (-> state
@@ -614,6 +753,8 @@
          (pos? (+ (or created 0) (or updated 0)))
          (not (#{:running :ok} (get-in form [:real :status]))))))
 
+;; [:admin/csv-picked files] A9 step 1: accepts one CSV file unless it is
+;; empty or over 1 MB.
 (defmethod handle :admin/csv-picked [state [_ files]]
   (let [f (first files)]
     (cond
@@ -622,9 +763,19 @@
       (> (:size f) max-csv-bytes) (ret (assoc-in state [:forms :import-csv] {:error "That file is larger than 1 MB. Split it into smaller files of up to 500 rows."}))
       :else (ret (assoc-in state [:forms :import-csv] {:file f})))))
 
+;; [:admin/csv-key-ready mode key] Stores the idempotency key for the dry run
+;; or the real import and checks again.
 (defmethod handle :admin/csv-key-ready [state [_ mode key]]
   (handle (assoc-in state [:forms :import-csv :keys mode] key) [:admin/csv-check mode]))
 
+;; [:admin/csv-check mode] mode is :dry (dry run) or :real. Uploads the CSV to
+;; POST /api/admin/product-imports (dryRun=true for :dry). The real import is
+;; only allowed after a dry run that would change something.
+;; Idempotency keys per upload batch: one key per file and per mode. A dry run
+;; and the real import are different requests (api-contract.md 8.2), so they
+;; must use different keys; sending the real import with the dry run's key
+;; would be a 409. Retrying the same file with the same key replays the first
+;; result instead of importing twice.
 (defmethod handle :admin/csv-check [state [_ mode]]
   (let [form (get-in state [:forms :import-csv])]
     (cond
@@ -660,6 +811,9 @@
                      (if (seq lines) (vec lines) [(or (get-in body [:error :message]) "The file could not be read.")]))
     :else ["We could not import the file. Please try again."]))
 
+;; [:admin/csv-result mode response] 200 stores the report; after a real
+;; import it also remembers which products were created or updated and reloads
+;; the drafts. 401 goes to sign in; other statuses show whole-file errors.
 (defmethod handle :admin/csv-result [state [_ mode {:keys [status body]}]]
   (cond
     (= 200 status)
@@ -674,12 +828,15 @@
 
 ;; Step 2, the pictures
 
+;; [:admin/pictures-picked files] A9 step 2: checks the files locally and
+;; queues the acceptable ones.
 (defmethod handle :admin/pictures-picked [state [_ files]]
   (if (or (empty? files) (= :uploading (get-in state [:forms :import-pictures :status])))
     (ret state)
     (let [[ok local] (split-picked files)]
       (ret (assoc-in state [:forms :import-pictures] {:status :ready :queue ok :results local})))))
 
+;; [:admin/pictures-upload] Starts uploading the queue in batches.
 (defmethod handle :admin/pictures-upload [state _]
   (let [{:keys [queue status]} (get-in state [:forms :import-pictures])]
     (if (or (empty? queue) (= :uploading status))
@@ -687,6 +844,8 @@
       (ret (update-in state [:forms :import-pictures] assoc :status :uploading :index 0 :total (count queue))
            [[:fx/dispatch [:admin/pictures-next]]]))))
 
+;; [:admin/pictures-next] Sends the next batch of up to 20 files, or finishes
+;; and reloads the drafts.
 (defmethod handle :admin/pictures-next [state _]
   (let [{:keys [queue index]} (get-in state [:forms :import-pictures])
         start (* index batch-size)]
@@ -695,10 +854,18 @@
            [[:fx/dispatch [:admin/reload]]])
       (ret state [[:fx/uuid [:admin/pictures-send (subvec queue start (min (count queue) (+ start batch-size)))]]]))))
 
+;; [:admin/pictures-send batch key] Uploads one batch to POST
+;; /api/admin/product-images.
+;; Each batch of up to 20 pictures gets its own key (made by :fx/uuid just
+;; before), so a lost response can be retried safely and batches never
+;; collide.
 (defmethod handle :admin/pictures-send [state [_ batch key]]
   (ret state [[:fx/upload-files {:path "/api/admin/product-images" :files batch :idempotency-key key}
                [:admin/pictures-batch-result batch]]]))
 
+;; [:admin/pictures-batch-result batch response] Adds the per-file results (or
+;; per-file failures when the whole request failed) and moves on to the next
+;; batch.
 (defmethod handle :admin/pictures-batch-result [state [_ batch {:keys [status body] :as result}]]
   (if (= 401 status)
     (to-login state)
@@ -708,6 +875,8 @@
              (update-in [:forms :import-pictures :index] inc))
          [[:fx/dispatch [:admin/pictures-next]]])))
 
+;; [:admin/pictures-retry] Uploads again the files whose batch failed in
+;; transit.
 (defmethod handle :admin/pictures-retry [state _]
   (let [{:keys [results]} (get-in state [:forms :import-pictures])
         again (vec (keep :retry-file results))]
@@ -716,6 +885,7 @@
       (ret (assoc-in state [:forms :import-pictures] {:status :ready :queue again :results (vec (remove :retry-file results))})
            [[:fx/dispatch [:admin/pictures-upload]]]))))
 
+;; [:admin/pictures-clear] Clears the picture upload results.
 (defmethod handle :admin/pictures-clear [state _]
   (ret (update state :forms dissoc :import-pictures)))
 
@@ -740,15 +910,21 @@
       (filterv #(ids (:id %)) items)
       (vec items))))
 
+;; [:admin/drafts-page response] Appends another page of drafts to the list
+;; (up to 500) and requests the next page.
 (defmethod handle :admin/drafts-page [state [_ {:keys [status body]}]]
   (if (= 200 status)
     (let [merged (assoc body :items (into (vec (get-in state [:admin :data :drafts :body :items])) (:items body)))]
       (ret (assoc-in state [:admin :data :drafts :body] merged) [(drafts-next-page-fx merged)]))
     (ret (assoc-in state [:admin :data :drafts] {:status :error :error "We could not load all the drafts."}))))
 
+;; [:admin/drafts-scope scope] Switches step 3 between this import's products
+;; and all drafts.
 (defmethod handle :admin/drafts-scope [state [_ scope]]
   (ret (assoc-in state [:forms :import-review :scope] scope)))
 
+;; [:admin/publish-complete] Publishes every shown draft that has price,
+;; picture and category (up to 500) with POST /api/admin/product-publications.
 (defmethod handle :admin/publish-complete [state _]
   (let [items (drafts-shown state)
         ids (mapv :id (take 500 (filter (comp empty? draft-lacks) items)))]
@@ -758,6 +934,8 @@
            [[:fx/request {:method :post :path "/api/admin/product-publications" :body {:productIds ids}}
              [:admin/publish-result (into {} (map (juxt :id :name)) items)]]]))))
 
+;; [:admin/publish-result names response] Stores per-product results
+;; (published or why not) and reloads.
 (defmethod handle :admin/publish-result [state [_ names {:keys [status body]}]]
   (cond
     (= 200 status)
@@ -772,6 +950,8 @@
 ;; ---------------------------------------------------------------------------
 ;; Staff
 
+;; [:admin/staff-add] A12: validates name and email, gets an idempotency key,
+;; then POST /api/admin/staff.
 (defmethod handle :admin/staff-add [state [_ :as action]]
   (let [form (get-in state [:forms :staff])
         {:keys [name email notify?]} (:values form)
@@ -786,6 +966,8 @@
                                 :body {:name (str/trim name) :email (str/trim email) :notifyOnNewOrder (boolean notify?)}}
                    [:admin/staff-added]]]))))
 
+;; [:admin/staff-added response] 201 shows the temporary password once; 409
+;; email already in use.
 (defmethod handle :admin/staff-added [state [_ {:keys [status body]}]]
   (cond
     (= 201 status) (ret (-> state (assoc :forms (dissoc (:forms state) :staff))
@@ -794,39 +976,55 @@
     (= 409 status) (ret (-> state (assoc-in [:forms :staff :status] :idle) (assoc-in [:forms :staff :errors :email] "That email is already in use.")))
     :else (ret (form-err state :staff (or (get-in body [:error :message]) "Could not add the account.")))))
 
+;; [:admin/staff-reset id name] Confirmed reset: generates a key for the reset
+;; request.
 (defmethod handle :admin/staff-reset [state [_ id nm]]
   (ret (assoc-in state [:admin :ui :dialog] nil)
        [[:fx/uuid [:admin/staff-reset-go id nm]]]))
 
+;; [:admin/staff-reset-go id name key] POST
+;; /api/admin/staff/{id}/password-resets with the key.
 (defmethod handle :admin/staff-reset-go [state [_ id nm key]]
   (ret state [[:fx/request {:method :post :path (str "/api/admin/staff/" id "/password-resets") :idempotency-key key}
                [:admin/staff-reset-result nm]]]))
 
+;; [:admin/staff-reset-result name response] 201 shows the new temporary
+;; password.
 (defmethod handle :admin/staff-reset-result [state [_ nm {:keys [status body]}]]
   (if (= 201 status)
     (ret (assoc-in state [:admin :ui :temp-password] {:for nm :value (:temporaryPassword body)}))
     (ret (assoc-in state [:admin :ui :notice] "Could not reset the password."))))
 
+;; [:admin/staff-deactivate id] DELETE /api/admin/staff/{id} (deactivates the
+;; account).
 (defmethod handle :admin/staff-deactivate [state [_ id]]
   (ret (assoc-in state [:admin :ui :dialog] nil)
        [[:fx/request {:method :delete :path (str "/api/admin/staff/" id)} [:admin/staff-deactivated]]]))
 
+;; [:admin/staff-deactivated] Shows a notice and reloads the list.
 (defmethod handle :admin/staff-deactivated [state _]
   (ret (assoc-in state [:admin :ui :notice] "Account deactivated.") [[:fx/dispatch [:admin/reload]]]))
 
+;; [:admin/dismiss-temp] Hides the temporary password after the owner has
+;; noted it.
 (defmethod handle :admin/dismiss-temp [state _]
   (ret (assoc-in state [:admin :ui :temp-password] nil)))
 
+;; [:help/print] A13: prints the topic (:fx/print).
 (defmethod handle :help/print [state _]
   (ret state [[:fx/print]]))
 
+;; [:admin/dismiss-notice] Hides the success notice bar.
 (defmethod handle :admin/dismiss-notice [state _]
   (ret (assoc-in state [:admin :ui :notice] nil)))
 
+;; [:admin/search path form-data] Orders or products search: navigates to path
+;; with q (and status) from the form.
 (defmethod handle :admin/search [state [_ path form-data]]
   (let [q (str/trim (str (get form-data "q")))
         status (get form-data "status")]
     (handle state [:nav/go (routes/with-query path (cond-> {} (not (str/blank? q)) (assoc :q q) (not (str/blank? status)) (assoc :status status)))])))
 
+;; [:admin/dialog-keydown key] Escape closes the open dialog.
 (defmethod handle :admin/dialog-keydown [state [_ k]]
   (if (= "Escape" k) (handle state [:admin/dialog-close]) (ret state)))

@@ -1,4 +1,6 @@
 (ns zandy.shared.routes-test
+  "Tests of shared.routes: matching, query parsing and encoding, path building.
+  Runs on the JVM and in the Node test build."
   (:require [clojure.test :refer [deftest is testing]]
             [zandy.shared.routes :as routes]))
 

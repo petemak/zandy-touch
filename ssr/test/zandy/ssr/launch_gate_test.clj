@@ -1,4 +1,7 @@
 (ns zandy.ssr.launch-gate-test
+  "Tests of ssr.launch-gate: passes when all four policies are approved, throws
+  when one is a placeholder, and retries while the API is unreachable. JVM
+  only."
   (:require [clojure.test :refer [deftest is]]
             [integrant.core :as ig]
             [zandy.ssr.api-client :as api-client]

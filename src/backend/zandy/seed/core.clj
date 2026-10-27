@@ -13,7 +13,9 @@
 (defn- read-resource [path]
   (edn/read-string (slurp (or (io/resource path) (throw (ex-info (str "Missing seed resource " path) {}))))))
 
-(defn seed-products [] (read-resource "seed/products.edn"))
+(defn seed-products
+  "The seed product definitions read from resources/seed/products.edn (a vector of maps with :sku :name :brand :category-slug :price :images ...)."
+  [] (read-resource "seed/products.edn"))
 
 (defn- attach-seed-image!
   "Stores one seed image on the product through the same catalog function the upload endpoints use."
@@ -33,6 +35,7 @@
   [ctx {:keys [images status stock-quantity] :as p}]
   (let [fields (select-keys p [:name :brand :is-own-brand :category-slug :price :short-description :description
                                :size :how-to-use :ingredients :featured :sku])
+        ;; Created as a draft first: a published product must already have a picture, so pictures are attached before publishing.
         product (catalog/create-product! ctx {} (assoc fields :status "draft" :stock-quantity (or stock-quantity 0)))
         id (:id product)
         pictures (mapv #(attach-seed-image! ctx id %) images)]
@@ -44,7 +47,8 @@
                                   :images pictures})))))
 
 (defn seed!
-  "Creates every seed product that does not exist yet. Returns the number created."
+  "Creates every seed product whose SKU does not exist yet, so running it again adds nothing. Argument: ctx (:config :conn :clock :media-store :image-processor). Returns the number created.
+  Side effects: Datomic transactions and media files per product and picture, through the same catalog functions the API uses."
   [ctx]
   (reduce
    (fn [n {:keys [sku] :as p}]
@@ -54,12 +58,16 @@
    0
    (seed-products)))
 
-(defn -main [& _]
+(defn -main
+  "Entry point of `clojure -M:seed`: migrates (or verifies migrations), then seeds the catalogue into the configured database.
+  Shuts down agents at the end because Datomic's non-daemon threads would otherwise keep the JVM alive against a real transactor."
+  [& _]
   (let [cfg (config/load-config (config/profile-from-env))
         conn (datomic/connect! (get-in cfg [:datomic :uri]))]
     (if (get-in cfg [:datomic :auto-migrate?])
       (migrations/migrate! conn)
       (migrations/verify-current! conn))
+    ;; A minimal ctx: seeding needs only the catalog functions, not the mailer or user lookup.
     (let [ctx {:config cfg :conn conn :clock (fn [] (java.util.Date.))
                :media-store (media/local-store (get-in cfg [:media :dir]))
                :image-processor (get-in cfg [:media :processor])}

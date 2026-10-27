@@ -17,17 +17,25 @@
   ^Date [ctx]
   ((:clock ctx)))
 
-(defn plus-ms [^Date d ms] (Date. (+ (.getTime d) (long ms))))
+(defn plus-ms
+  "A new java.util.Date `ms` milliseconds after Date `d`."
+  [^Date d ms] (Date. (+ (.getTime d) (long ms))))
 
 (defn- hex [^bytes bs] (apply str (map #(format "%02x" (bit-and % 0xff)) bs)))
 
-(defn sha256-hex ^String [^String s]
+(defn sha256-hex
+  "Lower-case hex SHA-256 of the UTF-8 bytes of string `s`."
+  ^String [^String s]
   (hex (.digest (MessageDigest/getInstance "SHA-256") (.getBytes s StandardCharsets/UTF_8))))
 
-(defn sha256-bytes-hex ^String [^bytes bs]
+(defn sha256-bytes-hex
+  "Lower-case hex SHA-256 of a byte array."
+  ^String [^bytes bs]
   (hex (.digest (MessageDigest/getInstance "SHA-256") bs)))
 
-(defn hmac-hex ^String [^String secret ^String message]
+(defn hmac-hex
+  "Lower-case hex HMAC-SHA256 of `message` keyed by `secret` (both strings, UTF-8). Used for CSRF tokens."
+  ^String [^String secret ^String message]
   (let [mac (Mac/getInstance "HmacSHA256")]
     (.init mac (SecretKeySpec. (.getBytes secret StandardCharsets/UTF_8) "HmacSHA256"))
     (hex (.doFinal mac (.getBytes message StandardCharsets/UTF_8)))))
@@ -41,7 +49,9 @@
     (.nextBytes secure-random bs)
     (.encodeToString (.withoutPadding (Base64/getUrlEncoder)) bs)))
 
-(defn constant-time-equals? [^String a ^String b]
+(defn constant-time-equals?
+  "True when strings `a` and `b` are equal, compared in constant time; false if either is nil. Use for token comparison."
+  [^String a ^String b]
   (and (some? a) (some? b)
        (MessageDigest/isEqual (.getBytes a StandardCharsets/UTF_8) (.getBytes b StandardCharsets/UTF_8))))
 
@@ -58,7 +68,9 @@
     (sequential? x) (mapv canonical x)
     :else x))
 
-(defn fingerprint [x] (sha256-hex (pr-str (canonical x))))
+(defn fingerprint
+  "Stable hash (hex SHA-256) of any EDN data: equal data hashes equally whatever the map key order. Used for idempotency bodies."
+  [x] (sha256-hex (pr-str (canonical x))))
 
 (defn client-ip
   "The client address from the header named by CLIENT_IP_HEADER (set by the edge), else the peer."

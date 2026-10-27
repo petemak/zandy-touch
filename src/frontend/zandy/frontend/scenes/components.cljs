@@ -1,5 +1,9 @@
 (ns zandy.frontend.scenes.components
-  "Portfolio scenes for the shared UI components, one per meaningful state."
+  "Portfolio scenes for the shared UI components (Button, Badge, StatusPill,
+  Notice, FormField, ProductCard, Gallery, QuantityStepper, CartLine,
+  OrderSummary, StatusTimeline, AgreementPanel, SiteHeader, SiteFooter ...),
+  one scene per meaningful state. Browser only; not reachable from
+  frontend.main."
   (:require [portfolio.replicant :refer-macros [defscene]]
             [zandy.frontend.scenes.fixtures :as fx]
             [zandy.shared.ui.core :as ui]

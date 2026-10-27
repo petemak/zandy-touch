@@ -4,17 +4,34 @@
 #_{:clj-kondo/ignore [:duplicate-require]}
 (require '[clojure.edn :as edn] '[clojure.java.io :as io] '[clojure.string :as str])
 
-(def images-dir "resources/seed/images")
-(def manifest (edn/read-string (slurp (str images-dir "/manifest.edn"))))
-(def products (edn/read-string (slurp "resources/seed/products.edn")))
-(def sources-md (slurp (str images-dir "/SOURCES.md")))
-(def required [:file :sku :alt :source-url :author :licence :retrieved])
-(def licences #{"CC0" "Public Domain"})
+(def images-dir
+  "Directory with the seed pictures and their manifest.edn and SOURCES.md."
+  "resources/seed/images")
+(def manifest
+  "The parsed manifest.edn: one map per picture file with :file :sku :alt :source-url :author :licence :retrieved (and :placeholder? for neutral placeholders that still need a real photo)."
+  (edn/read-string (slurp (str images-dir "/manifest.edn"))))
+(def products
+  "The seed products read from resources/seed/products.edn."
+  (edn/read-string (slurp "resources/seed/products.edn")))
+(def sources-md
+  "The text of SOURCES.md, where every picture must be credited."
+  (slurp (str images-dir "/SOURCES.md")))
+(def required
+  "Manifest keys that must be non-blank for every picture."
+  [:file :sku :alt :source-url :author :licence :retrieved])
+(def licences
+  "Licences accepted for seed pictures."
+  #{"CC0" "Public Domain"})
 
-(def on-disk (->> (.listFiles (io/file images-dir)) (map #(.getName %)) (filter #(str/ends-with? % ".jpg")) set))
-(def in-manifest (set (map :file manifest)))
+(def on-disk
+  "Names of the .jpg files in images-dir."
+  (->> (.listFiles (io/file images-dir)) (map #(.getName %)) (filter #(str/ends-with? % ".jpg")) set))
+(def in-manifest
+  "Set of file names listed in the manifest."
+  (set (map :file manifest)))
 
 (def problems
+  "Lazy sequence of problem strings: files without manifest entries and vice versa, missing fields, disallowed licences, pictures not credited in SOURCES.md, published products without enough pictures, SKUs not starting with SEED-, and product images missing from the manifest."
   (concat
    (for [f (remove in-manifest on-disk)] (str "file without manifest entry: " f))
    (for [f (remove on-disk in-manifest)] (str "manifest entry without file: " f))

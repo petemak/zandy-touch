@@ -1,5 +1,9 @@
 (ns zandy.frontend.scenes.pages
-  "Portfolio scenes for whole pages: loaded, empty, error and edge states."
+  "Portfolio scenes for the whole public pages P1 to P8 and the error pages:
+  loaded, empty, error and edge states (sold out, no photo, cart problems,
+  checkout errors, tracking results). Each scene renders
+  shared.pages/public-view for a fixture state. Browser only; not reachable
+  from frontend.main."
   (:require [portfolio.replicant :refer-macros [defscene]]
             [zandy.frontend.scenes.fixtures :as fx :refer [base-state]]
             [zandy.shared.pages :as pages]))
@@ -7,7 +11,10 @@
 (defn- ok [data] {:status :ok :data data})
 (defn- view [state] (pages/public-view state))
 
-(def home-data {:categories fx/categories :new fx/listing :own (update fx/listing :items #(vec (take 2 %))) :featured fx/listing})
+(def home-data
+  "Page data for P1 Home: categories plus the new, own-brand and featured
+  listings."
+  {:categories fx/categories :new fx/listing :own (update fx/listing :items #(vec (take 2 %))) :featured fx/listing})
 
 (defscene home :title "Page / home" (view (base-state "/" (ok home-data))))
 (defscene home-minimal :title "Page / home, no own-brand or featured" (view (base-state "/" (ok (assoc home-data :own {:items []} :featured {:items []})))))
@@ -24,7 +31,9 @@
 (defscene cart-checking :title "Page / cart, checking" (view (base-state "/cart" (ok nil) :cart {:items fx/cart-items} :cart-check {:status :loading})))
 (defscene cart-problems :title "Page / cart, problems" (view (base-state "/cart" (ok nil) :cart {:items fx/cart-items} :cart-check {:status :ready :result fx/validation-problems})))
 (defscene cart-error :title "Page / cart, validation unavailable" (view (base-state "/cart" (ok nil) :cart {:items fx/cart-items} :cart-check {:status :error})))
-(def checkout-refs {:delivery-areas fx/areas :policies {"orderTerms" fx/policy} :policy-status {"orderTerms" :ready}})
+(def checkout-refs
+  "Reference data checkout needs: delivery areas and the approved order terms."
+  {:delivery-areas fx/areas :policies {"orderTerms" fx/policy} :policy-status {"orderTerms" :ready}})
 (defscene checkout-empty :title "Page / checkout, empty cart" (view (base-state "/checkout" (ok nil))))
 (defscene checkout-form :title "Page / checkout, new" (view (base-state "/checkout" (ok nil) :cart {:items fx/cart-items} :cart-check {:status :ready :result fx/validation-ok} :refs checkout-refs)))
 (defscene checkout-errors :title "Page / checkout, field errors" (view (base-state "/checkout" (ok nil) :cart {:items fx/cart-items} :cart-check {:status :ready :result fx/validation-ok} :refs checkout-refs

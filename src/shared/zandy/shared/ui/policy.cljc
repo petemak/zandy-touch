@@ -1,10 +1,13 @@
 (ns zandy.shared.ui.policy
-  "Policy documents and the order-terms acceptance panel."
+  "PolicyDocument and the AgreementPanel used on the legal pages (P12 to P14,
+  P17) and at checkout (P6). Pure hiccup functions, shared code (.cljc)."
   (:require [zandy.shared.format :as fmt]
             [zandy.shared.ui.core :as ui]))
 
 (defn blocks
-  "Render bodyBlocks. All text is plain text (escaped by the renderer)."
+  "Renders the policy bodyBlocks, a seq of {:type \"heading\"|\"paragraph\"|\"list\"
+  :text or :items}. Text is escaped by the renderer, never inserted as HTML;
+  unknown block types render nothing. Returns a seq of hiccup."
   [bodyBlocks]
   (for [[i b] (map-indexed vector bodyBlocks)]
     ^{:key i}
@@ -15,6 +18,11 @@
       nil)))
 
 (defn policy-document
+  "PolicyDocument. Argument: the GET /api/policies/{type} body {:title :version
+  :effectiveFrom :reviewStatus :summary :bodyBlocks}. Renders the page's only
+  h1, version and effective date (Kampala date), the \"In short\" summary and
+  the body; a draft notice shows while reviewStatus is \"placeholder\". Returns
+  hiccup."
   [{:keys [title version effectiveFrom reviewStatus summary bodyBlocks]}]
   [:article.policy
    (when (= "placeholder" reviewStatus) (ui/draft-notice))
@@ -27,8 +35,11 @@
    [:div.policy__body (blocks bodyBlocks)]])
 
 (defn agreement-panel
-  "Order-terms review and explicit acceptance. `status` is :loading, :error or
-  :ready."
+  "AgreementPanel on checkout. Argument map: {:policy (order terms body)
+  :status (:loading, :error or :ready) :accepted? :error}. :error offers
+  [:agreement/load] to retry; :ready shows the summary, the scrollable full
+  text, a link to the page and the acceptance checkbox, which dispatches
+  [:checkout/accept checked?]. Returns hiccup."
   [{:keys [policy status accepted? error]}]
   [:section.agreement {:aria-labelledby "agreement-title"}
    [:h2#agreement-title "Review and accept the order terms"]

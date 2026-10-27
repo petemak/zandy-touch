@@ -1,9 +1,12 @@
 (ns zandy.ssr.stub-api
-  "Development stub of the backend API, shaped exactly like api-contract.md.
-  Used to build and click-test the frontend before (or without) the real
-  backend. In-memory and stateful: orders reduce stock, idempotency keys
-  replay, a staff session works. Not shipped: lives under ssr/dev.
-  Run: cd ssr && clojure -M:stub [port]   (default 8080)"
+  "Development stub of the backend API (not shipped; lives under ssr/dev). JVM
+  only. It is shaped like api-contract.md so the frontend server and the
+  browser app can be built and click-tested without the real backend:
+  in-memory and stateful (orders reduce stock, Idempotency-Key replays work, a
+  staff session cookie works, product import and picture upload behave like
+  the contract). It is not a model of the real business rules and is never
+  used in tests of the backend. Run: cd ssr && clojure -M:stub [port] (default
+  8080)."
   (:require [clojure.string :as str]
             [jsonista.core :as json])
   (:import (com.sun.net.httpserver HttpExchange HttpHandler HttpServer)
@@ -11,12 +14,22 @@
            (java.nio.charset StandardCharsets)
            (java.time Instant)))
 
-(def mapper (json/object-mapper {:decode-key-fn keyword}))
-(defn jread [s] (when-not (str/blank? s) (json/read-value s mapper)))
-(defn jwrite [x] (json/write-value-as-string x))
-(defn now [] (str (.truncatedTo (Instant/now) java.time.temporal.ChronoUnit/SECONDS)))
+(def mapper
+  "JSON object mapper that reads keys as keywords."
+  (json/object-mapper {:decode-key-fn keyword}))
+(defn jread
+  "Parses the JSON text `s` into a keyword-keyed map; blank text gives nil.
+  Throws on invalid JSON."
+  [s] (when-not (str/blank? s) (json/read-value s mapper)))
+(defn jwrite
+  "Serialises `x` to a JSON string."
+  [x] (json/write-value-as-string x))
+(defn now
+  "Current time as an ISO-8601 UTC string truncated to whole seconds."
+  [] (str (.truncatedTo (Instant/now) java.time.temporal.ChronoUnit/SECONDS)))
 
 (def categories
+  "The six fixed categories in the shape of GET /api/categories items."
   [{:id "c1" :slug "skincare" :name "Skincare" :description "Cleansers, serums and creams for everyday skin care." :sortOrder 1}
    {:id "c2" :slug "perfumes" :name "Perfumes" :description "Eau de parfum and body mists for every occasion." :sortOrder 2}
    {:id "c3" :slug "body-shaping" :name "Body-shaping" :description "Shapewear and body contouring care." :sortOrder 3}
@@ -25,6 +38,9 @@
    {:id "c6" :slug "health-and-wellness" :name "Health & Wellness" :description "Supplements and nutrition for daily wellbeing." :sortOrder 6}])
 
 (def seed
+  "Seed products as [sku name category-slug own-brand? price stock size].
+  Includes a sold-out item (SK-04) and a low-stock item (SK-03) so the
+  sold-out and limited-stock states can be clicked through."
   [["SK-01" "Radiance Vitamin C Serum 30 ml" "skincare" true 85000 24 "30 ml"]
    ["SK-02" "Gentle Foaming Face Cleanser 150 ml" "skincare" false 38000 40 "150 ml"]
    ["SK-03" "Daily Moisturising Cream 50 ml" "skincare" true 55000 3 "50 ml"]
@@ -53,9 +69,15 @@
    ["EX-04" "Extra Sample Item Four" "skincare" false 13000 10 nil]
    ["EX-05" "Extra Sample Item Five" "perfumes" false 14000 10 nil]])
 
-(defn slugify [s] (-> s str/lower-case (str/replace #"[^a-z0-9]+" "-") (str/replace #"^-|-$" "")))
+(defn slugify
+  "URL slug for the text `s`: lower case, runs of other characters become \"-\"."
+  [s] (-> s str/lower-case (str/replace #"[^a-z0-9]+" "-") (str/replace #"^-|-$" "")))
 
-(defonce db
+(defonce ^{:doc "The stub's whole in-memory state in one atom: :products (with
+  :stock, :status, :photos, :version), :orders, :idem (idempotency replay table
+  keyed by [scope key]), :sessions, :movements, :messages, :subscribers, :staff
+  and :policies. defonce, so a REPL reload keeps the data."}
+  db
   (atom {:products (vec (map-indexed
                          (fn [i [sku nm cat own? price stock size]]
                            {:id (str "p" (inc i)) :slug (slugify nm) :sku (str "SEED-" sku) :name nm :brand (if own? "Zandy Touch" "Sample Brand")
@@ -73,14 +95,23 @@
          :policies {}}))
 
 (def policy-text
+  "Title and summary lines of the four policy documents served by the stub."
   {"orderTerms" ["Order terms" ["Prices shown are product prices in UGX and exclude delivery." "The delivery fee is agreed with you before dispatch." "You may cancel before dispatch." "You pay on delivery in cash or mobile money."]]
    "termsOfSale" ["Terms of sale" []]
    "privacy" ["Privacy policy" ["We keep your contact details for 6 months."]]
    "returns" ["Returns and refunds" []]})
 
-(def approved? (atom false))
+(def approved?
+  "Atom: when true the stub reports its policies as reviewStatus \"approved\",
+  otherwise \"placeholder\". Lets the launch gate (ssr.launch-gate) be exercised
+  from a REPL."
+  (atom false))
 
-(defn policy [type]
+(defn policy
+  "GET /api/policies/{type} body for `type` (\"orderTerms\", \"termsOfSale\",
+  \"privacy\" or \"returns\"), or nil for an unknown type. The version is fixed
+  (\"2026-10-01\"); place-order rejects any other agreement version."
+  [type]
   (when-let [[title summary] (get policy-text type)]
     {:type type :version "2026-10-01" :title title :reviewStatus (if @approved? "approved" "placeholder")
      :summary summary
@@ -89,29 +120,54 @@
                   {:type "list" :items ["First point" "Second point"]}]
      :contentHash "sha256:stub" :effectiveFrom "2026-10-01T00:00:00Z"}))
 
-(defn image-of [ph]
+(defn image-of
+  "API image object {:id :alt :urls {:thumb :medium :large}} for a stored photo
+  `ph`; the URLs point at the stub's own /media/ placeholder SVGs."
+  [ph]
   {:id (:id ph) :alt (:alt ph)
    :urls {:thumb (str "/media/" (:id ph) "-thumb.webp") :medium (str "/media/" (:id ph) "-medium.webp") :large (str "/media/" (:id ph) "-large.webp")}})
 
-(defn img [p] (some-> (first (:photos p)) image-of))
-(defn images-of [p] (mapv image-of (:photos p)))
+(defn img
+  "First image of product `p` as an API image, or nil when it has no photo."
+  [p] (some-> (first (:photos p)) image-of))
+(defn images-of
+  "All images of product `p` as a vector of API images."
+  [p] (mapv image-of (:photos p)))
 
-(defn avail [p] (if (pos? (:stock p)) "available" "soldOut"))
-(defn max-q [p] (min 10 (:stock p)))
+(defn avail
+  "\"available\" when product `p` has stock, otherwise \"soldOut\"."
+  [p] (if (pos? (:stock p)) "available" "soldOut"))
+(defn max-q
+  "Largest quantity a customer may order of `p`: the stock, at most 10."
+  [p] (min 10 (:stock p)))
 
-(defn summary [p]
+(defn summary
+  "Product summary in the shape of the GET /api/products items for stored
+  product `p`. The stub always reports isNew true."
+  [p]
   {:id (:id p) :slug (:slug p) :name (:name p) :brand (:brand p) :isOwnBrand (:isOwnBrand p)
    :categorySlug (:categorySlug p) :price (:price p) :currency "UGX"
    :shortDescription (str "A " (str/lower-case (:name p)) " for everyday use.")
    :availability (avail p) :maxQuantity (max-q p) :isNew true :featured (:featured p) :image (img p)})
 
-(defn published [] (filter #(= "published" (:status %)) (:products @db)))
+(defn published
+  "Lazy seq of the stored products whose status is \"published\"."
+  [] (filter #(= "published" (:status %)) (:products @db)))
 
-(defn paged [items {:strs [page pageSize]} default-size]
+(defn paged
+  "Page of `items`. Arguments: `items`, a map of string query parameters (uses
+  \"page\" and \"pageSize\") and the default page size. Returns {:items :page
+  :pageSize :totalItems}."
+  [items {:strs [page pageSize]} default-size]
   (let [page (or (some-> page parse-long) 1) size (or (some-> pageSize parse-long) default-size)]
     {:items (vec (take size (drop (* (dec page) size) items))) :page page :pageSize size :totalItems (count items)}))
 
-(defn list-products [q]
+(defn list-products
+  "GET /api/products. Argument: `q`, the map of string query parameters (q,
+  categorySlug, availability, ownBrand, featured, sort, page, pageSize).
+  Returns the paged list of summaries; sold-out products are always sorted
+  last, as in the contract."
+  [q]
   (let [needle (some-> (q "q") str/lower-case)
         items (cond->> (published)
                 (q "categorySlug") (filter #(= (q "categorySlug") (:categorySlug %)))
@@ -125,7 +181,10 @@
         sorted (sort-by #(if (pos? (:stock %)) 0 1) sorted)]
     (update (paged sorted q 24) :items #(mapv summary %))))
 
-(defn detail [p]
+(defn detail
+  "GET /api/products/{slug} body for stored product `p`: the summary plus
+  category, description, images and up to four related products."
+  [p]
   (let [c (some #(when (= (:categorySlug p) (:slug %)) %) categories)]
     (merge (dissoc (summary p) :categorySlug :image :shortDescription :featured)
            {:category {:slug (:slug c) :name (:name c)}
@@ -136,17 +195,34 @@
             :related (vec (map summary (take 4 (remove #(= (:id p) (:id %)) (filter #(= (:categorySlug p) (:categorySlug %)) (published))))))
             :updatedAt (:updatedAt p)})))
 
-(defn err [status code msg & [details]]
+(defn err
+  "Builds an error response [status {:error {:code :message :details}}] in the
+  contract's error shape. `details` (optional) is a vector of {:field :code
+  :message}."
+  [status code msg & [details]]
   [status {:error (cond-> {:code code :message msg} details (assoc :details details))}])
 
-(defn order-total [lines] (reduce + (map :lineTotal lines)))
+(defn order-total
+  "Sum of the :lineTotal of order `lines`."
+  [lines] (reduce + (map :lineTotal lines)))
 
-(defn order-view [o]
+(defn order-view
+  "Order as the API returns it: adds :itemsSubtotal, :currency, the delivery
+  fee note and :total (nil until a delivery fee is set)."
+  [o]
   (let [sub (order-total (:items o))]
     (assoc o :itemsSubtotal sub :currency "UGX" :deliveryFeeNote "Agreed with you before dispatch"
            :total (when (some? (:deliveryFee o)) (+ sub (:deliveryFee o))))))
 
-(defn place-order [body _idem-key]
+(defn place-order
+  "POST /api/orders. Arguments: the parsed JSON `body` ({:customer :delivery
+  :paymentMethod :items :agreement}) and the idempotency key (unused here;
+  replay is handled by the caller). Returns [201 {:order
+  :agreementAcceptance}] and reduces stock, or an error: 409
+  agreementVersionOutdated, 422 validationFailed (phone), 409 cartOutdated
+  with per-line problems (unavailable, priceChanged, soldOut,
+  insufficientStock). Side effect: updates the db atom."
+  [body _idem-key]
   (let [by-id (into {} (map (juxt :id identity)) (:products @db))
         problems (vec (keep (fn [{:keys [productId quantity expectedUnitPrice]}]
                               (let [p (by-id productId)]
@@ -181,7 +257,12 @@
         [201 {:order (dissoc (order-view o) :history)
               :agreementAcceptance {:type "orderTerms" :version "2026-10-01" :acceptedAt (now)}}]))))
 
-(defn validate-cart [body]
+(defn validate-cart
+  "POST /api/cart-validations. Argument: body {:items [{:productId
+  :quantity}]}. Returns [200 {:items [line] :itemsSubtotal :hasProblems ...}]
+  where each line has the current :unitPrice, :maxQuantity and a :problem
+  (unavailable, soldOut, insufficientStock) or nil."
+  [body]
   (let [by-id (into {} (map (juxt :id identity)) (:products @db))
         lines (mapv (fn [{:keys [productId quantity]}]
                       (let [p (by-id productId)
@@ -195,7 +276,10 @@
     [200 {:items lines :itemsSubtotal (reduce + (map #(if (:purchasable %) (:lineTotal %) 0) lines)) :currency "UGX"
           :deliveryFee nil :deliveryFeeNote "Agreed with you before dispatch" :hasProblems (boolean (some :problem lines))}]))
 
-(defn admin-product [p]
+(defn admin-product
+  "Product as the admin API returns it (summary plus sku, stockQuantity,
+  lowStock, status, version, timestamps and descriptive fields)."
+  [p]
   (merge (summary p) {:sku (:sku p) :stockQuantity (:stock p) :lowStock (<= 1 (:stock p) 5) :status (:status p)
                       :version (:version p) :updatedBy {:id "u1" :name "Sandra"} :updatedAt (:updatedAt p)
                       :createdAt (:createdAt p) :size (:size p) :description (or (:description p) "Stub description.") :howToUse (:howToUse p)
@@ -204,17 +288,22 @@
 
 ;; ---- product pictures, bulk import and publishing (api-contract.md 8.2) ----
 
-(defn find-product [id] (some #(when (= id (:id %)) %) (:products @db)))
+(defn find-product
+  "The stored product with id `id`, or nil."
+  [id] (some #(when (= id (:id %)) %) (:products @db)))
 
 (defn reorder-photos
-  "PATCH `images`: the list replaces the product's pictures; unknown ids are ignored."
+  "PATCH `images`: the list replaces the product's pictures; unknown ids are
+  ignored. Arguments: the current `photos` and `images` ([{:id :alt}]).
+  Returns the new vector of photos."
   [photos images]
   (let [by-id (into {} (map (juxt :id identity)) photos)]
     (vec (keep (fn [{:keys [id alt]}] (when-let [ph (by-id id)] (assoc ph :alt alt))) images))))
 
 (defn multipart-parts
   "Parts of a multipart body that carry a file: [{:name :filename :content}].
-  The stub reads the body as text, which is enough for file names and CSV."
+  The stub reads the body as text, which is enough for file names and CSV.
+  Argument: `raw`, the body text. Returns nil when the body is not multipart."
   [raw]
   (let [raw (str raw)
         boundary (first (str/split-lines raw))]
@@ -226,10 +315,20 @@
                         :content (str/replace (or content "") #"\r\n$" "")})))
                  (str/split raw (re-pattern (java.util.regex.Pattern/quote boundary))))))))
 
+;; Why compare file names and contents instead of raw bytes: a multipart
+;; boundary is different on every request, so the raw body of a retry never
+;; equals the original. This mirrors the real contract, where a dry run and
+;; the real import must use different keys (the contract treats the same key
+;; with different content as a conflict).
 (defn with-idempotency
-  "Same key and body replays the first response; same key, other body is 409.
-  The body is compared by file names and contents, not raw bytes: a multipart
-  boundary differs on every request."
+  "Idempotency-Key handling for the upload and import endpoints. Arguments:
+  request `headers`, a `scope` (the endpoint, so the same key on another
+  endpoint is a separate slot), the raw body `raw` and `f` (a function that
+  does the work and returns [status body]). No key gives 400
+  missingIdempotencyKey. Same key and same content replays the first response
+  with an Idempotent-Replayed header; same key with different content gives
+  409 idempotencyKeyReused. Only a 200 result is remembered. Side effect:
+  updates the db atom."
   [headers scope raw f]
   (let [k (get headers "Idempotency-key")
         body (mapv (juxt :filename :content) (multipart-parts raw))]
@@ -243,16 +342,28 @@
                         (when (= 200 status) (swap! db assoc-in [:idem slot] {:body-hash (hash body) :response resp}))
                         r))))))
 
-(def image-extensions #{"jpg" "jpeg" "png" "webp"})
+(def image-extensions
+  "File extensions accepted for product pictures."
+  #{"jpg" "jpeg" "png" "webp"})
 
-(defn file-ext [fname] (some-> (re-find #"\.([^.]+)$" fname) second str/lower-case))
+(defn file-ext
+  "Lower-case extension of file name `fname`, or nil."
+  [fname] (some-> (re-find #"\.([^.]+)$" fname) second str/lower-case))
 
-(defn file-problem [{:keys [filename content]}]
+(defn file-problem
+  "Why an uploaded file `{:filename :content}` is not acceptable: {:code
+  \"unsupportedMediaType\"|\"fileTooLarge\" :message}, or nil when it is fine
+  (JPEG, PNG or WebP, at most 5 MB)."
+  [{:keys [filename content]}]
   (cond
     (not (image-extensions (file-ext filename))) {:code "unsupportedMediaType" :message "Only JPEG, PNG or WebP pictures can be used."}
     (> (count (str content)) (* 5 1024 1024)) {:code "fileTooLarge" :message "This file is larger than 5 MB."}))
 
-(defn add-photo! [product-id fname position]
+(defn add-photo!
+  "Adds a stub picture to product `product-id` at `position` (1-based; appends
+  when nil or out of range) and bumps the product's :version. Returns the new
+  photo. Side effect: updates the db atom."
+  [product-id fname position]
   (let [ph {:id (str "up-" (subs (str (random-uuid)) 0 8)) :alt nil}]
     (swap! db update :products
            (fn [ps] (mapv (fn [p] (if (= product-id (:id p))
@@ -263,13 +374,24 @@
                                     p)) ps)))
     ph))
 
-(defn attached-result [fname p ph position]
+(defn attached-result
+  "Per-file result item {:status \"attached\" ...} for the upload endpoints
+  (api-contract.md 8.2)."
+  [fname p ph position]
   {:filename fname :status "attached" :productId (:id p) :sku (:sku p) :position position :image (image-of ph) :error nil})
 
-(defn rejected-result [fname code msg]
+(defn rejected-result
+  "Per-file result item {:status \"rejected\" :error {:code :message}} for the
+  upload endpoints."
+  [fname code msg]
   {:filename fname :status "rejected" :productId nil :sku nil :position nil :image nil :error {:code code :message msg}})
 
-(defn attach-to-product [id body]
+(defn attach-to-product
+  "POST /api/admin/products/{id}/images: attaches 1 to 6 uploaded files to
+  product `id`. `body` is the raw multipart text. Returns [200 {:items
+  [per-file result] :product admin-product}], 404 for an unknown product or
+  422 for a bad file count. Side effect: updates the db atom."
+  [id body]
   (let [files (multipart-parts body)]
     (cond
       (nil? (find-product id)) (err 404 "notFound" "Not found.")
@@ -286,8 +408,10 @@
         [200 {:items items :product (admin-product (find-product id))}]))))
 
 (defn sku-match
-  "Longest SKU that the file name starts with (case-insensitive), and the
-  optional -1..-6 position."
+  "Finds the product whose SKU is the longest one that the file name starts
+  with (case-insensitive), and the optional \"-1\" to \"-6\" position after it.
+  Argument: file name `fname`. Returns [product position-or-nil], or nil when
+  no SKU matches."
   [fname]
   (let [base (str/replace fname #"\.[^.]+$" "")
         lower (str/lower-case base)
@@ -296,7 +420,13 @@
       (let [rest (subs base (count (:sku p)))]
         [p (some-> (re-matches #"-([1-6])" rest) second parse-long)]))))
 
-(defn attach-by-sku [body]
+(defn attach-by-sku
+  "POST /api/admin/product-images: attaches up to 20 uploaded files, matching
+  each file name to a product SKU (see sku-match; \"-1\" to \"-6\" after the SKU
+  picks the position). Returns [200 {:items [...]}] with a result per file
+  (unknownSku, tooManyImages and file problems are rejected per file) or 422
+  for a bad file count. Side effect: updates the db atom."
+  [body]
   (let [files (multipart-parts body)]
     (if (or (empty? files) (> (count files) 20))
       (err 422 "validationFailed" "Please check the highlighted fields." [{:field "files" :code "invalid" :message "Send 1 to 20 files."}])
@@ -313,15 +443,21 @@
                                (rejected-result filename "unknownSku" "No product has a SKU at the start of this file name."))))
                          files)}])))
 
-(def import-columns ["sku" "name" "brand" "ownBrand" "category" "price" "shortDescription" "description" "size" "howToUse" "ingredients" "featured" "openingStock"])
+(def import-columns
+  "Column names of the product import CSV, in template order."
+  ["sku" "name" "brand" "ownBrand" "category" "price" "shortDescription" "description" "size" "howToUse" "ingredients" "featured" "openingStock"])
 
 (def import-template
+  "The CSV template served by GET /api/admin/product-import-template: the
+  header and two example rows."
   (str (str/join "," import-columns) "\n"
        "ZT-SKIN-001,Brightening cream 50 g,Zandy Touch,yes,skincare,45000,A daily cream.,A longer description.,50 g,Apply in the evening.,,no,20\n"
        "ZT-PERF-002,Eau de parfum 50 ml,Sample Brand,no,Perfumes,120000,,,50 ml,,,yes,5\n"))
 
 (defn parse-csv
-  "Minimal CSV reader: quotes, doubled quotes, comma or semicolon (from the header line)."
+  "Minimal CSV reader. Argument: `text`. Handles a leading byte-order mark,
+  quoted cells, doubled quotes and a comma or semicolon delimiter (chosen from
+  the header line). Returns a vector of rows (vectors of strings)."
   [text]
   (let [text (str/replace (str text) #"^﻿" "")
         delim (let [h (first (str/split-lines text))] (if (> (count (re-seq #";" h)) (count (re-seq #"," h))) \; \,))]
@@ -338,14 +474,23 @@
           :else (do (.append field c) (recur (next chars) field row rows false)))
         (cond-> rows (or (seq row) (pos? (.length field))) (conj (conj row (str field))))))))
 
-(defn yes-no [v] (case (str/lower-case (str v)) ("yes" "y" "true") true ("no" "n" "false" "") false nil))
+(defn yes-no
+  "Parses a yes/no cell (\"yes\", \"y\", \"true\" / \"no\", \"n\", \"false\", blank): true,
+  false, or nil when it is anything else."
+  [v] (case (str/lower-case (str v)) ("yes" "y" "true") true ("no" "n" "false" "") false nil))
 
-(defn find-category [v]
+(defn find-category
+  "Slug of the category whose slug or name equals the cell `v`
+  (case-insensitive), or nil."
+  [v]
   (let [v (str/lower-case (str/trim v))]
     (some #(when (or (= v (:slug %)) (= v (str/lower-case (:name %)))) (:slug %)) categories)))
 
 (defn row-fields
-  "Validated fields of one row: [fields errors]. Only non-empty cells count."
+  "Validated fields of one import row. Arguments: `row` (map of column name to
+  cell) and `new?` (true for a SKU that does not exist yet, which makes name,
+  brand and category required). Returns [fields errors]; only non-empty cells
+  count, and errors are {:field :code :message}."
   [row new?]
   (let [cell (fn [k] (str/trim (str (get row k ""))))
         err (fn [field code msg] {:field field :code code :message msg})
@@ -373,7 +518,16 @@
        (not (str/blank? (cell "openingStock"))) (assoc :stock (or (parse-long (cell "openingStock")) 0)))
      errors]))
 
-(defn import-products [body dry-run?]
+(defn import-products
+  "POST /api/admin/product-imports (and its dry run). Arguments: `body` (raw
+  multipart text holding one CSV file) and `dry-run?`. Returns [200 {:dryRun
+  :summary {:rows :created :updated :rejected} :rows [{:line :sku :status
+  \"created\"|\"updated\"|\"rejected\" :productId :warnings :errors}]}] or 422 for a
+  missing file, missing or unknown columns, or more than 500 rows. New
+  products are created as drafts; existing SKUs are updated (opening stock is
+  ignored with a warning). A dry run changes nothing. Side effect: updates the
+  db atom unless `dry-run?`."
+  [body dry-run?]
   (let [file (first (multipart-parts body))
         table (when file (parse-csv (:content file)))
         header (some->> (first table) (mapv #(str/lower-case (str/trim %))))
@@ -417,7 +571,11 @@
             n #(count (filter (fn [r] (= % (:status r))) rows))]
         [200 {:dryRun dry-run? :summary {:rows (count rows) :created (n "created") :updated (n "updated") :rejected (n "rejected")} :rows rows}]))))
 
-(defn publish-one! [id]
+(defn publish-one!
+  "Publishes product `id` if it has a price and a picture. Returns {:productId
+  :status \"published\"} or {:status \"rejected\" :errors [{:field :code}]}. Side
+  effect: updates the db atom."
+  [id]
   (let [p (find-product id)
         errors (cond-> []
                  (nil? p) (conj {:field "id" :code "notFound"})
@@ -429,7 +587,9 @@
           {:productId id :status "published"}))))
 
 
-(defn order-list-item [o]
+(defn order-list-item
+  "Order as shown in the admin orders list (GET /api/admin/orders items)."
+  [o]
   (let [sub (order-total (:items o))]
     {:id (:id o) :orderNumber (:orderNumber o) :status (:status o) :placedAt (:placedAt o)
      :customerName (get-in o [:customer :name]) :customerPhone (get-in o [:customer :phone])
@@ -437,11 +597,18 @@
      :deliveryFee (:deliveryFee o) :total (when (some? (:deliveryFee o)) (+ sub (:deliveryFee o)))
      :currency "UGX" :paymentMethod (:paymentMethod o) :updatedAt (:placedAt o)}))
 
-(defn update-order [id f]
+(defn update-order
+  "Replaces the order with id `id` in the db by (f order). Side effect: updates
+  the db atom."
+  [id f]
   (swap! db update :orders (fn [os] (mapv #(if (= id (:id %)) (f %) %) os))))
 
 (defn handle
-  "Returns [status body] or [status body headers]."
+  "The stub's router. Arguments: `method` (keyword), `path`, `q` (map of string
+  query parameters), `body` (parsed JSON map, or the raw string for multipart)
+  and `headers` (map). Returns [status body] or [status body extra-headers].
+  Staff routes check the zt_session cookie against the in-memory session set;
+  unknown routes return the contract's 404 error."
   [method path q body headers]
   (let [seg (vec (remove str/blank? (str/split path #"/")))
         staff? (contains? (:sessions @db) (some->> (get headers "Cookie") (re-find #"zt_session=([^;]+)") second))]
@@ -604,14 +771,27 @@
         (and (= :put method) (= ["api" "admin" "account" "password"] seg)) [200 {:passwordChanged true}]
         :else (err 404 "notFound" "Not found.")))))
 
-(defn svg-for [id variant]
+(defn svg-for
+  "Placeholder SVG text for the stub's /media/ images; the hue depends on the
+  number in `id` so products look different. `variant` is only printed in the
+  picture."
+  [id variant]
   (let [n (or (some-> (re-find #"\d+" (str id)) parse-long) 0)
         hue (* 37 n)]
     (str "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 500'><rect width='400' height='500' fill='hsl(" hue ",25%,92%)'/>"
          "<rect x='150' y='140' width='100' height='220' rx='18' fill='hsl(" hue ",30%,45%)'/>"
          "<text x='200' y='430' font-size='22' text-anchor='middle' fill='#444'>stub " id " " variant "</text></svg>")))
 
-(defn exchange-handler []
+;; Responses carry the same Cache-Control as the contract's public GETs but
+;; with a short lifetime, so the dev browser does not hold stale data for
+;; long.
+(defn exchange-handler
+  "HttpHandler for the stub server. Reads the request (query, JSON or raw
+  multipart body, headers), serves /media/*.webp placeholders (immutable
+  cache) or calls `handle`, and writes the JSON response. Public GETs get
+  \"public, max-age=30\"; admin, auth and error responses get no-store. An
+  exception becomes a 500 internalError JSON body."
+  []
   (reify HttpHandler
     (handle [_ ex]
       (let [^HttpExchange ex ex
@@ -641,13 +821,19 @@
           (catch Throwable t
             (send! 500 (.getBytes (jwrite {:error {:code "internalError" :message (str "stub: " (.getMessage t))}}) StandardCharsets/UTF_8) "application/json" {})))))))
 
-(defn start [port]
+(defn start
+  "Starts the stub HTTP server on `port` with 8 threads. Returns the
+  HttpServer."
+  [port]
   (let [server (HttpServer/create (InetSocketAddress. "0.0.0.0" (int port)) 0)]
     (.createContext server "/" (exchange-handler))
     (.setExecutor server (java.util.concurrent.Executors/newFixedThreadPool 8))
     (.start server)
     server))
 
-(defn -main [& [port]]
+(defn -main
+  "Entry point (`clojure -M:stub [port]`, default 8080). Side effect: starts
+  the server and prints the port."
+  [& [port]]
   (start (or (some-> port parse-long) 8080))
   (.println System/out (str "stub API on " (or port 8080))))

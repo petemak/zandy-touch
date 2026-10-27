@@ -5,6 +5,7 @@
             [zandy.platform.mailer :as mailer]))
 
 (def valid-prod
+  "A configuration map that passes the prod-profile rules, used as the base for the invalid variants."
   (-> (config/load-config :test)
       (assoc :profile :prod)
       (assoc-in [:datomic :uri] "datomic:dev://db.internal:4334/zandy?password=x")

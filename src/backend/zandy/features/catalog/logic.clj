@@ -5,11 +5,19 @@
   (:import (java.text Normalizer Normalizer$Form)
            (java.util Date)))
 
-(def new-product-days 30)
-(def max-images 6)
-(def day-ms (* 24 60 60 1000))
+(def new-product-days
+  "A product counts as \"new\" for this many days after it was first published."
+  30)
+(def max-images
+  "Maximum pictures per product (the slots are numbered 1 to this)."
+  6)
+(def day-ms
+  "Milliseconds in a day."
+  (* 24 60 60 1000))
 
-(defn slugify [s]
+(defn slugify
+  "URL slug of `s`: accents removed, lower case, \"&\" as \"and\", other runs of non-alphanumerics become \"-\", at most 80 characters; \"product\" when nothing is left. Pure."
+  [s]
   (-> (Normalizer/normalize (str s) Normalizer$Form/NFD)
       (str/replace #"\p{M}" "")
       str/lower-case
@@ -26,34 +34,51 @@
     base
     (first (remove taken (map #(str base "-" %) (iterate inc 2))))))
 
-(defn normalize-sku [sku] (when sku (str/upper-case (str/trim sku))))
+(defn normalize-sku
+  "Trimmed upper-case SKU, or nil for nil. SKUs are compared and stored upper-case, so \"ab-1\" and \"AB-1\" are the same."
+  [sku] (when sku (str/upper-case (str/trim sku))))
 
-(defn availability [stock] (if (pos? (or stock 0)) :available :soldOut))
+(defn availability
+  "Public availability from a stock count: :available when stock is positive (nil counts as 0), otherwise :soldOut."
+  [stock] (if (pos? (or stock 0)) :available :soldOut))
 
-(defn max-quantity [stock max-per-line]
+(defn max-quantity
+  "How many units one cart line may hold: min(max-per-line, stock), never below 0. Nil stock counts as 0."
+  [stock max-per-line]
   (max 0 (min max-per-line (or stock 0))))
 
-(defn new? [first-published-at ^Date now]
+(defn new?
+  "True when `first-published-at` (instant or nil) is less than new-product-days before `now` (a java.util.Date)."
+  [first-published-at ^Date now]
   (boolean (and first-published-at
                 (< (- (.getTime now) (.getTime ^Date first-published-at)) (* new-product-days day-ms)))))
 
-(defn low-stock? [stock threshold] (and (pos? stock) (<= stock threshold)))
+(defn low-stock?
+  "True when stock is above zero but at or below `threshold` (a sold-out product is not \"low\")."
+  [stock threshold] (and (pos? stock) (<= stock threshold)))
 
+;; Pictures are ordered by their slot (:position, 0-based).
 (defn- sorted-images [images] (sort-by :position images))
 
-(defn image-view [{:keys [photo-id alt]} product-name]
+(defn image-view
+  "Public view of a product picture entry {:photo-id :alt}: {:id :alt :urls}. A missing alt falls back to `product-name`."
+  [{:keys [photo-id alt]} product-name]
   {:id photo-id :alt (or alt product-name) :urls (util/media-urls photo-id)})
 
+;; Staff views return the stored alt as is, nil when none is set. The public view substitutes the product name, but staff must see that the field is really empty so they can fill it in.
 (defn admin-image-view
   "Staff view of a picture: the stored alt text, nil when none is set (no fallback to the product name)."
   [{:keys [photo-id alt]}]
   {:id photo-id :alt alt :urls (util/media-urls photo-id)})
 
-(defn first-image [{:keys [images name]}]
+(defn first-image
+  "Public image view of the product's first picture (lowest :position), or nil. Product map needs :images and :name."
+  [{:keys [images name]}]
   (when-let [i (first (sorted-images images))] (image-view i name)))
 
 (defn summary-view
-  "The public list item."
+  "Public list item (contract 3) from a product map and opts {:max-qty per-line maximum, :now java.util.Date}.
+  Returns {:id :slug :name :brand :is-own-brand :category-slug :price :currency \"UGX\" :short-description :availability :max-quantity :is-new :featured :image}. Pure."
   [{:keys [id slug name brand own-brand? category price short-description stock-quantity first-published-at featured?] :as p}
    {:keys [max-qty now]}]
   {:id id :slug slug :name name :brand brand :is-own-brand (boolean own-brand?)
@@ -65,7 +90,9 @@
    :featured (boolean featured?)
    :image (first-image p)})
 
-(defn detail-view [{:keys [id slug name brand own-brand? category price description short-description size how-to-use
+(defn detail-view
+  "Contract 3 product detail body from a product map, the already-built `related` summaries and opts {:max-qty :now}. Includes all pictures in position order. Pure."
+  [{:keys [id slug name brand own-brand? category price description short-description size how-to-use
                            ingredients images stock-quantity first-published-at updated-at]}
                    related {:keys [max-qty now]}]
   {:id id :slug slug :name name :brand brand :is-own-brand (boolean own-brand?)
@@ -79,11 +106,15 @@
 
 ;; ---- search, filter, sort, paginate ------------------------------------------------------------
 
-(defn matches-text? [q {:keys [name brand short-description description]}]
+(defn matches-text?
+  "True when lower-cased text `q` occurs in the product's name, brand, short description or description (case-insensitive substring)."
+  [q {:keys [name brand short-description description]}]
   (let [q (str/lower-case q)]
     (boolean (some #(and % (str/includes? (str/lower-case %) q)) [name brand short-description description]))))
 
-(defn filter-public [products {:keys [category-slug q availability own-brand featured]}]
+(defn filter-public
+  "Filters a sequence of product maps by the public query keys :category-slug :q :availability (\"available\" or \"soldOut\") :own-brand :featured (true only filters). Pure."
+  [products {:keys [category-slug q availability own-brand featured]}]
   (cond->> products
     category-slug (filter #(= category-slug (get-in % [:category :slug])))
     q (filter #(matches-text? q %))
@@ -100,12 +131,17 @@
              "priceDesc" (fn [p] [(- (:price p)) (str/lower-case (:name p))])
              "nameAsc" (fn [p] [(str/lower-case (:name p))])
              (fn [p] [(- (or (some-> (:first-published-at p) .getTime) 0)) (str/lower-case (:name p))]))
+        ;; Sold-out products always come last, whatever the chosen sort.
         sold-out? #(if (pos? (:stock-quantity %)) 0 1)]
     (sort-by (fn [p] [(sold-out? p) (by p)]) products)))
 
-(def paginate util/paginate)
+(def paginate
+  "Alias of util/paginate: (items page page-size) to {:items :page :page-size :total-items}."
+  util/paginate)
 
-(defn related-products [products product n]
+(defn related-products
+  "Up to `n` other products from the same category as `product` (a product map), newest first, available before sold out."
+  [products product n]
   (->> products
        (filter #(and (not= (:id %) (:id product))
                      (= (get-in % [:category :slug]) (get-in product [:category :slug]))))
@@ -114,7 +150,9 @@
 
 ;; ---- admin views -------------------------------------------------------------------------------
 
-(defn admin-summary [{:keys [id slug sku name brand own-brand? category price stock-quantity status featured? updated-at] :as p}
+(defn admin-summary
+  "Staff list item from a product map, the updated-by user summary (or nil) and opts {:low threshold}. Includes the SKU, stock, low-stock flag, status and the first picture with its real alt (nil when unset). Pure."
+  [{:keys [id slug sku name brand own-brand? category price stock-quantity status featured? updated-at] :as p}
                      updated-by {:keys [low]}]
   {:id id :slug slug :sku sku :name name :brand brand :is-own-brand (boolean own-brand?)
    :category-slug (:slug category) :price price :currency "UGX"
@@ -122,7 +160,9 @@
    :low-stock (low-stock? stock-quantity low) :status status :featured (boolean featured?)
    :image (some-> (first (sorted-images (:images p))) admin-image-view) :updated-at updated-at :updated-by updated-by})
 
-(defn admin-detail [{:keys [id slug sku name brand own-brand? category price short-description description size how-to-use
+(defn admin-detail
+  "Staff detail body from a product map, the updated-by summary and opts {:low}. Includes version, all pictures in position order with stored alt (nil when unset), created-at and updated-at. Pure."
+  [{:keys [id slug sku name brand own-brand? category price short-description description size how-to-use
                             ingredients featured? status version stock-quantity images created-at updated-at] :as _p}
                     updated-by {:keys [low]}]
   {:id id :slug slug :sku sku :name name :brand brand :is-own-brand (boolean own-brand?)
@@ -147,13 +187,17 @@
       (= stock "out") (filter #(zero? (:stock-quantity %)))
       (= stock "low") (filter #(low-stock? (:stock-quantity %) low)))))
 
-(defn sort-admin [products sort-key]
+(defn sort-admin
+  "Sorts staff products by \"nameAsc\", \"stockAsc\" (lowest stock first) or, by default, most recently updated first."
+  [products sort-key]
   (case sort-key
     "nameAsc" (sort-by #(str/lower-case (:name %)) products)
     "stockAsc" (sort-by (juxt :stock-quantity #(str/lower-case (:name %))) products)
     (sort-by #(- (.getTime ^Date (:updated-at %))) products)))
 
-(defn admin-counts [products low]
+(defn admin-counts
+  "Counts of published products that are out of stock and low on stock: {:out n :low n} (shown as tab badges in the admin list)."
+  [products low]
   (let [published (filter #(= :published (:status %)) products)]
     {:out (count (filter #(zero? (:stock-quantity %)) published))
      :low (count (filter #(low-stock? (:stock-quantity %) low) published))}))
@@ -161,7 +205,8 @@
 ;; ---- publishing rule ----------------------------------------------------------------------------
 
 (defn publish-problems
-  "Detail entries for a product that is (or is becoming) published but lacks price, image or category."
+  "Validation details [{:field :code :message}] when a product that is (or is becoming) :published lacks a price (priceRequired), a picture (imageRequired) or a category (invalid on categorySlug).
+  Argument: a map with :status (keyword) :price :images :category. Returns nil for products that are not published, [] when all is well."
   [{:keys [status price images category]}]
   (when (= :published status)
     (cond-> []
