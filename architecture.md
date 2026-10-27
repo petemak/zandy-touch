@@ -1,6 +1,13 @@
 # Architecture: Zandy Touch
 
-Inputs read in full: engineering-standards.md (including "Deployment topology" and the routing libraries), business-context.md, brand-brief.md, scope-checklist.md, design-spec.md, user-journeys.md, api-contract.md, visual-guide.md (section 11 and the seed image section), and the agent definitions in .claude/agents/. design-tokens.css (font paths only) and the assets/ layout were skimmed. Research date: 24 October 2026. This file replaces the earlier single-service design.
+## Revision history
+
+| Date | What changed | Source |
+|---|---|---|
+| 2026-10-24 | First design of the two-service system (ssr + backend + one Datomic transactor). | Mode 1, standards and owner decisions Q1 to Q10 |
+| 2026-10-27 | Merged as built and approved: DA1 to DA10 (libraries, stored-response idempotency, extra backend and frontend edges, pictures as components of products, browser re-render, scrolling category strip, help build, help text public in the bundle, one-off edits by the lead); the nine code-versus-design points of CODE-GUIDE.md section 8 (migration file format, `/media` route, `::jobs`, manifest read per request, `build.sh`, test namespace names, `dev/user.clj`, honeypot, seed and bootstrap contexts); changes since the design (bulk product import replacing the photo library, stock-tab filter rule, approved policy texts and migration 0011, Kampala display time, social links, staff help A13, code documentation standard and check B26, B25); the deployment boundary (section 8) and D3 brought in line with deploy/DECISIONS.md without provider details; sections 9 and 12 marked resolved or open. Section numbers and IDs (D1 to D12, N1 to N6, B1 to B26, R2 to R9, D-1 to D-8, PE1 to PE5, Q3 to Q10, C1 to C9) are unchanged; new IDs are PE6, PE7, O1 to O4, D-9, D-10 and section 13 (DA1 to DA10). | architecture-review.md section 11 (DA1 to DA10) and 11a (owner decisions, 26 October 2026); CODE-GUIDE.md section 8; deploy/DECISIONS.md (26 October 2026); qa-report.md; engineering-standards.md "Code documentation" |
+
+Inputs read in full: engineering-standards.md (including "Deployment topology", the routing libraries and "Code documentation"), business-context.md, brand-brief.md, scope-checklist.md, design-spec.md, user-journeys.md, api-contract.md, visual-guide.md (section 11 and the seed image section), architecture-review.md, CODE-GUIDE.md, deploy/DECISIONS.md, and the agent definitions in .claude/agents/. Research date for the original design: 24 October 2026. This file replaces the earlier single-service design.
 
 Summary:
 1. Two stateless web processes and one datastore. `ssr` (frontend server, JVM Clojure, Pedestal, `replicant.string`) renders public pages from views shared with the browser bundle and reads data only through the backend HTTP API. `backend` (Pedestal, Datomic peer) owns all data and business rules and serves no HTML. One Datomic transactor with dev storage.
@@ -15,22 +22,26 @@ Summary:
 
 ### What the system must do
 From the categories marked "applies" in scope-checklist.md:
-- Catalog and inventory: six seeded categories, products with up to 6 photos, counted stock that cannot oversell, logged stock movements, archive instead of delete, bulk photo upload with SKU matching, seed sample products with CC0 images.
-- Checkout (reduced form): guest order, cash or mobile money on delivery, no gateway, delivery fee recorded by staff later, explicit server-recorded acceptance of the versioned order terms, all in one atomic transaction.
+- Catalog and inventory: six seeded categories, products with up to 6 pictures (a picture always belongs to one product), counted stock that cannot oversell, logged stock movements, archive instead of delete, picture upload per product and in bulk by SKU file name, seed sample products with CC0 images. There is no photo library (see "Bulk import" below).
+- Checkout (reduced form): guest order, cash or mobile money on delivery, no gateway, delivery fee recorded by staff later, explicit server-recorded acceptance of the versioned order terms, all in one atomic transaction. The public forms carry a hidden honeypot field (section 5).
 - Accounts for staff only: owner and support, owner manages support accounts, password change, owner password reset by email.
-- Back-office: orders (confirm, approve delivery, deliver, cancel with stock restore), products, stock, bulk product import (CSV plus SKU-named pictures, imported as drafts, then bulk publish), contact messages, subscribers export.
+- Back-office: orders (confirm, approve delivery, deliver, cancel with stock restore), products, stock, bulk product import (CSV plus SKU-named pictures, imported as drafts, then bulk publish; api-contract.md 8.2), contact messages, subscribers export, and an in-app staff help (A13) generated from `admin-help.md`.
 - Search: category browse, substring text search, sort, availability filter.
 - Notifications: email only, from and to the owner's Gmail address (business-context.md), optional customer receipt.
-- Legal: four versioned policy documents with `reviewStatus`, and a launch gate that blocks indexing while any is a placeholder.
+- Legal: four versioned policy documents with `reviewStatus`, and a launch gate that blocks indexing while any is a placeholder. The owner approved the four texts on 26 October 2026 (migration 0011, section 3.3); the gate therefore passes on the current data.
+- Public details: business phone, WhatsApp, public email, address, opening hours and social links (TikTok, Facebook, Instagram) come from configuration through `GET /api/site-info` (contract 2). The social links default to the shop's TikTok and Facebook pages and Instagram is empty until supplied.
+- Display time: the API and the database use UTC; every time shown to people (public tracking, policy dates, the staff area) is Kampala time, UTC+3 with no daylight saving, produced by pure arithmetic in `shared.format` so the JVM render and the browser print identical text. Sitemap `lastmod`, JSON-LD and e-mail stay machine UTC or print no times (contract 1.2).
 
-From engineering-standards.md: separate frontend and backend servers, SSR from shared Replicant views, both servers able to run several instances, shared state in the backend database, Datomic dev storage plus off-site backups accepted, 15 USD per month total; non-negotiable rules (server-side validation and authorization, no hardcoded secrets, versioned migrations, idempotent mutations, no micro-frontends); WCAG 2.1 AA; Integrant, Aero, Malli, Pedestal (backend routing with its own router), Reitit (frontend route matching only), Datomic.
+Bulk import (changed since the design): the earlier photo library (an unassigned-photo pool with assignment endpoints) is gone. Staff import a CSV of products as drafts, then upload SKU-named pictures that attach directly to products, then publish the complete drafts in bulk (`POST /api/admin/product-imports`, `.../product-images`, `.../products/{id}/images`, `.../product-publications`).
+
+From engineering-standards.md: separate frontend and backend servers, SSR from shared Replicant views, both servers able to run several instances, shared state in the backend database, Datomic dev storage plus off-site backups accepted, 15 USD per month total; non-negotiable rules (server-side validation and authorization, no hardcoded secrets, versioned migrations, idempotent mutations, no micro-frontends); WCAG 2.1 AA; Integrant, Aero, Malli, Pedestal (backend routing with its own router), Reitit (frontend route matching only), Datomic; and the code documentation standard (a docstring on every namespace and function, a "why" comment where the reason is not obvious; check B26).
 
 ### Constraints that shape everything else
 | Constraint | Source | Consequence |
 |---|---|---|
 | One human owner plus two builder agents (backend-clojure, frontend-cljs) | standards, task | Two source trees, one contract, no shared editing. |
 | Scale: hundreds of customers growing to thousands; a few hundred products; tens of orders a day. Mostly read-only browsing | business-context, scope-checklist | Reads are absorbed by the CDN and the SSR cache headers; writes are few. One transactor is plenty. |
-| Hosting at most 15 USD per month in total, including both servers, the transactor and storage | business-context, standards | Small JVM heaps and no extra services (D1, D3). Everything must be able to run on one small server at launch. Provider, plan and domain are chosen at the deployment stage (section 8). |
+| Hosting at most 15 USD per month in total, including both servers, the transactor and storage | business-context, standards | Small JVM heaps and no extra services (D1, D3). Everything must be able to run on one small server. Provider, plan and domain are chosen at the deployment stage (section 8). As built so far: a 4 GB host runs staging only, production gets its own server at go-live (section 8). |
 | Several instances of each server must be possible | standards, owner decision 2 | No state in process memory; db-backed sessions, rate limits, idempotency, outbox claiming; migrations run as a separate step; media store must not be instance-local once the backend spans hosts (PE5). |
 | Mobile first, expensive data, SEO | brand-brief, visual-guide, design-spec | Server-rendered public HTML with SEO tags in the first response, one small client bundle, WebP variants. |
 | Cards uncommon in Uganda; no online payment | scope-checklist | No payment gateway, no card data. |
@@ -40,7 +51,7 @@ From engineering-standards.md: separate frontend and backend servers, SSR from s
 
 ## 2. Components
 
-Notation: `A -> B` means A depends on B. Dependencies point one way. No cycle exists in the lists below.
+Notation: `A -> B` means A depends on B. Dependencies point one way. No cycle exists in the lists below. The lists below are exactly the allowed-edge tables in `scripts/check/backend_deps.clj` and `scripts/check/frontend_deps.clj` (check B3); changing a list means changing the script in the same commit.
 
 ### 2.1 Runtime topology (what runs)
 ```
@@ -51,12 +62,12 @@ Browser
         everything else    -> ssr      x N   (JVM, Pedestal, replicant.string)
   ssr     -> internal proxy address -> backend x N   (HTTP API only)
   backend -> Datomic transactor (dev storage)
-  backend -> MEDIA_DIR (photos) ; backend -> smtp.gmail.com (outbound only)
+  backend -> MEDIA_DIR (photos) ; backend -> smtp.gmail.com (outbound only; a local mail sink on staging)
   ssr     -> STATIC_DIR (bundle, css, fonts, icons)
 ```
-Processes at launch: the edge proxy, `backend`, `ssr` and the transactor, plus a staging set if the owner chooses to run staging alongside (section 8). The CDN, Gmail SMTP and the off-site backup destination are external services.
+Processes: the edge proxy, `backend`, `ssr` and the transactor; on a staging-only host also a small mail sink (section 8). The CDN, Gmail SMTP and the off-site backup destination are external services.
 
-Why `ssr` reaches the backend through an internal proxy address (`API_BASE_URL`): the proxy already load-balances and health-checks the backend instances, so adding a backend instance changes only proxy configuration, not `ssr`. `ssr` never goes through the CDN for its own API calls, so what it renders is fresh backend data.
+Why `ssr` reaches the backend through an internal proxy address (`API_BASE_URL`): the proxy already load-balances and health-checks the backend instances, so adding a backend instance changes only proxy configuration, not `ssr`. `ssr` never goes through the CDN for its own API calls, so what it renders is fresh backend data. The internal listener must not forward the HTTP/1.1 `Upgrade: h2c` request that the JDK HttpClient sends on a plain connection (section 8, requirement 3).
 
 ### 2.2 Backend components (owner: backend-clojure)
 Source root `src/backend/zandy/`, project file the root `deps.edn`. The backend serves JSON and media only; it never renders HTML and does not use `src/shared`.
@@ -65,88 +76,102 @@ Platform (Integrant keys `zandy.platform.*`):
 
 | Component | Single responsibility |
 |---|---|
-| `platform.config` | Read `resources/config.edn` with Aero (`#profile`, `#env`), validate with Malli, fail fast at boot. |
-| `platform.log` | Structured JSON log events; the one place that decides which fields are safe to log. |
-| `platform.datomic` | Own the peer connection. Provide `conn`, `db`, and `fresh-db` (`d/sync`, see section 5, multi-instance reads). |
+| `platform.config` | Read `resources/config.edn` with Aero (`#profile`, `#env`), validate with Malli, fail fast at boot. In the prod profile it adds prod-only rules (owner email, `SESSION_HMAC_SECRET` of 32+ characters, SMTP user and password, smtp mailer, vips processor, non-memory `DATOMIC_URI`) and reports problem names, never values. |
+| `platform.log` | Hand-written structured JSON log lines (over logback and `platform.json`, no mulog; DA1); the one place that decides which fields are safe to log. |
+| `platform.datomic` | Own the peer connection. Provide `conn`, `db`, and `fresh-db` (`d/sync`, see section 5, multi-instance reads); translate db-function failures to API errors. |
 | `platform.migrations` | Apply versioned schema, data and db-function migrations (3.3). Run by `clojure -M:migrate` before instances start; at boot the system only verifies the ledger is current (a dev/test profile may apply them automatically). |
 | `platform.errors` | The only place that builds error responses. |
-| `platform.json` | Muuntaja/jsonista with camelCase to kebab-case keys and the ISO 8601 UTC `Z` encoder. |
-| `platform.http` | Build the Pedestal connector and the router from the route table. Common interceptors: request id (reuse inbound `X-Request-Id`), access log (route template only), security headers, error handling, Malli validation, rate limiting, idempotency, cache headers (from route data). No business logic. See D6 for the Reitit/Pedestal decision. |
+| `platform.json` | jsonista with camelCase to kebab-case keys and the ISO 8601 UTC `Z` encoder (no muuntaja; DA1). |
+| `platform.util` | Stateless helpers: hashing, paging, client IP, clock helpers (DA3). May be used by any component. |
+| `platform.validation` | Malli details, phone and email rules shared by slices; normalisation of request bodies (strings trimmed, blank strings become absent) (DA3). Depends on `errors`, `json`. May be used by any component. |
+| `platform.http` | Build the Pedestal connector and the router from the route table. One Pedestal interceptor per route composes plain ring-style wrappers (hand-written JSON, Malli validation and multipart handling; `ring-core` is used for multipart), plus the common interceptors: request id (reuse inbound `X-Request-Id`), access log (route template only), security headers, error handling, rate limiting, idempotency, cache headers (from route data). No business logic. See D6. |
 | `platform.auth-interceptors` | Enforce `:access` (`:public`, `:staff`, `:owner`), `mustChangePassword` and CSRF from route data. |
 | `platform.rate-limit` | Datomic-backed counters (section 5). Owns `:ratelimit/*`. |
-| `platform.idempotency` | Check and record `Idempotency-Key` in Datomic. Owns `:idempotency/*`; exposes tx-data builders so features record the key in the same transaction as their own writes. |
-| `platform.media` | `MediaStore` protocol (`local` directory implementation at launch, `s3` later) plus the image pipeline (libvips CLI). Builds the `/media/{id}-{variant}.webp` URLs and serves them with immutable headers. |
-| `platform.mailer` | `Mailer` protocol; SMTP implementation (Angus Mail) configured for Gmail; a log-only implementation for dev and tests. |
-| `platform.system` | Integrant system map and `-main`. The only namespace that knows every component. |
+| `platform.idempotency` | Claim an `Idempotency-Key` with a transaction function, store the response, clean up expired records (stored-response design, DA2; section 5). Owns `:idempotency/*`. |
+| `platform.media` | `MediaStore` protocol (`local` directory implementation at launch, `s3` later) plus the image pipeline (libvips CLI): store, open and process files. It does not serve HTTP; the `/media/{id}-{variant}.webp` route is in `features.photos` (`serve-media`). |
+| `platform.mailer` | `Mailer` protocol; SMTP implementation (Angus Mail) configured for Gmail; a log-only implementation for dev and tests. Its `-main` backs `clojure -M:send-test-mail`. |
+| `platform.system` | Integrant system map and `-main`. The only namespace that knows every component. It builds the handler context (`build-ctx`: config, connection, clock, mailer, media store, and `:user-summaries`, see below) and the `::jobs` component. |
+
+`::jobs` (in `platform.system`): one single-thread scheduled pool started before the server. Every 15 seconds it runs the outbox worker (`notifications/process-once!`); every hour it runs the idempotency clean-up, the order and contact-message retention (3.2) and the outbox purge. Every instance runs it; that is safe because outbox messages are claimed with `:db/cas` and the clean-ups are idempotent. A failing job is logged (`scheduled-job-failed`) and never stops the pool.
+
+Handler context. Handlers receive one `ctx` map from `system/build-ctx`. Staff names reach `catalog` and `orders` through `ctx :user-summaries`, built in `platform.system` from `accounts.api`, so those slices have no source edge to `accounts` for names (DA3). Cost: the dependency is invisible to the graph script, and tests must build the context with it. The two one-shot entry points do not use `build-ctx`: `zandy.seed.core/-main` assembles its own ctx map, and `zandy.features.accounts.bootstrap/-main` calls its function directly with a clock of `(Date.)`. So "`platform.system` is the only namespace that knows every component" holds, but "every handler context comes from `build-ctx`" does not; the seed and bootstrap contexts are by design minimal and use the system clock directly. Tests inject a fixed clock through `ctx :clock`.
 
 Feature slices (`zandy.features.<slice>`), each with `api.clj` (the only namespace other slices may require), `logic.clj` (pure), `db.clj` (queries and tx-data builders), `schema.clj` (Malli), `routes.clj` (route data and thin handlers). Extra files inside a slice are allowed.
 
 | Slice | Responsibility | Contract |
 |---|---|---|
-| `site` | Business info and delivery areas from config. | 2 |
-| `catalog` | Categories, products, product images, the photo entity, stock quantity and stock movements (public and staff product endpoints, stock adjustment and history, bulk publication, search/sort, sitemap entries). A picture (`:photo/*`) always belongs to one product. Owns `:category/*`, `:product/*`, `:product-image/*`, `:photo/*`, `:stock-movement/*`. | 2, 3, 8.1, 8.3, product-publications |
-| `photos` | Product picture uploads (per product and bulk by SKU file name) and the CSV product import with its template. No photo library. Uses `platform.media` and `catalog.api` (all writes go through catalog). Owns no datoms. | 8.2 |
+| `site` | Business info (including social links) and delivery areas from config; `GET /api/healthz`. | 2, 11 |
+| `catalog` | Categories, products, product images, the photo entity, stock quantity and stock movements (public and staff product endpoints, stock adjustment and history, bulk publication, search/sort, sitemap entries). A picture (`:photo/*`) always belongs to one product: `:product-image/photo` is a component reference (migration 0010, DA4), so retracting a product-image retracts its photo record and no unassigned photo can exist. Runs the image pipeline in `attach-file!` because it owns the photo entity. Owns `:category/*`, `:product/*`, `:product-image/*`, `:photo/*`, `:stock-movement/*`. | 2, 3, 8.1, 8.3, product-publications |
+| `photos` | Product picture uploads (per product and bulk by SKU file name), the CSV product import with its template, and the public `GET /media/{file}` route (`serve-media`, strict file-name pattern, immutable one-year cache headers). No photo library. Uses `platform.media` and `catalog.api` (all datom writes go through catalog). Owns no datoms. | 8.2, media |
 | `policies` | Read the four versioned policy documents (data delivered by migration), return the current one. Owns no writes (migrations write `:policy/*`). | 2 |
-| `orders` | Cart validation, order placement (atomic), tracking, staff order list, detail, fee edit, status changes with stock restore. Owns `:order/*`, `:order-line/*`, `:order-event/*`, `:acceptance/*`. Owns the db functions `place-order` and `change-order-status` (the declared exception in B4: they also write `:product/stock-quantity`, `:stock-movement/*`, `:outbox/*`, `:idempotency/*` in the same transaction). | 3 cart-validations, 4, 7 |
-| `accounts` | Staff users, sessions, login/logout, password change, owner password reset, staff management. Owns `:user/*`, `:session/*`, `:reset-token/*`. | 6, 10 |
-| `engagement` | Subscriptions, unsubscribes, contact messages, subscriber CSV. Owns `:subscriber/*`, `:contact-message/*`. | 5, 9 |
-| `notifications` | Email outbox: tx-data builders, the claiming worker, templates. Owns `:outbox/*`. | 9a |
+| `orders` | Cart validation, order placement (atomic), tracking, staff order list, detail, fee edit, status changes with stock restore; the delivery-city list comes from `site.api`. Owns `:order/*`, `:order-line/*`, `:order-event/*`, `:acceptance/*`. Owns the db functions `place-order` and `change-order-status` (the declared exception in B4: they also write `:product/stock-quantity`, `:stock-movement/*` and `:outbox/*` in the same transaction). `place-order` carries the unique `:order/idempotency-key` instead of writing `:idempotency/*`. Answers a filled honeypot with an order-shaped 201 that stores nothing. | 3 cart-validations, 4, 7 |
+| `accounts` | Staff users, sessions, login/logout, password change, owner password reset, staff management; per-email login lockout through `platform.rate-limit`; `bootstrap.clj`. Owns `:user/*`, `:session/*`, `:reset-token/*`. | 6, 10 |
+| `engagement` | Subscriptions, unsubscribes, contact messages, subscriber CSV; retention of contact messages. Owns `:subscriber/*`, `:contact-message/*`. | 5, 9 |
+| `notifications` | Email outbox: tx-data builders, the claiming worker (`process-once!`), purge, templates. Owns `:outbox/*`. | 9a |
+| `seed` (`zandy.seed.core`, not a feature slice) | The `clojure -M:seed` entry point (3.4). Uses `catalog.api` only for writes. | none |
+
+Honeypot (orders, subscriptions, contact messages): the request schema accepts an optional hidden string field `website`. `platform.http` normalises every JSON body before validation (strings are trimmed and blank strings become absent), so the browser's `"website": ""` arrives as no value. If the field is present with real text, the handler answers as if it had succeeded (`POST /api/orders`: 201 with an order-shaped body, fresh id and order number, not trackable; subscriptions and contact messages: their normal success body) and stores, sends and decrements nothing (contract 1.7 and 3). The handlers test `(some? website)` after normalisation, which is why the normalisation step and the honeypot belong together: moving or removing normalisation would turn every real request into a fake success. The backend tests post a filled field to all three endpoints and the frontend test pins that the browser sends it empty.
 
 Backend dependency list (allowed edges only; `scripts/check/backend_deps.clj` enforces exactly this):
 ```
 platform.config            -> (none)
-platform.errors, json      -> (none)
-platform.log               -> config
-platform.datomic           -> config, log
-platform.migrations        -> datomic
+platform.errors, json, util -> (none)
+platform.validation        -> errors, json
+platform.log               -> json
+platform.datomic           -> config, log, errors
+platform.migrations        -> datomic, config, log
 platform.media             -> config, log
 platform.mailer            -> config, log
 platform.rate-limit        -> datomic, errors
 platform.idempotency       -> datomic, errors
 platform.auth-interceptors -> errors, features.accounts.api
 platform.http              -> config, log, errors, json, rate-limit, idempotency,
-                              auth-interceptors, routes of every feature slice
+                              auth-interceptors, routes of site, policies, catalog,
+                              orders, accounts, engagement, photos
 platform.system            -> every component
 features.site              -> (none)
 features.policies          -> (none)
 features.notifications     -> platform.mailer
-features.catalog           -> platform.media (url helper only)
+features.catalog           -> platform.media
 features.photos            -> catalog.api, platform.media
-features.accounts          -> notifications.api
-features.orders            -> catalog.api, policies.api, notifications.api, accounts.api
+features.accounts          -> notifications.api, platform.rate-limit,
+                              platform.config (bootstrap.clj only), platform.datomic
+features.orders            -> catalog.api, policies.api, notifications.api, accounts.api, site.api
 features.engagement        -> notifications.api
+seed                       -> catalog.api, platform.config, datomic, log, media, migrations
 ```
-Every feature may also use `platform.errors`, `platform.log`, `platform.datomic`, `platform.idempotency`. Cycle check: `site`, `policies`, `notifications`, `catalog` depend on no feature; `photos`, `accounts`, `engagement` depend only on those; `orders` depends on four others and nothing depends on `orders`. `platform.auth-interceptors` -> `accounts.api`, and `accounts` depends on no HTTP component. No cycle. (The earlier photos <-> catalog cycle stays removed: `catalog` owns the photo entity.)
+"Shared" platform components that any component may require without a listed edge: `errors`, `log`, `datomic`, `util`, `validation`, `json`. `platform.idempotency` and `platform.rate-limit` are not in that set: a slice that needs them must be listed (today only `accounts -> rate-limit`; handlers reach idempotency through route data, `:idempotent? true`, which `platform.http` applies). Cycle check: `site`, `policies`, `notifications`, `catalog` depend on no feature; `photos`, `accounts`, `engagement` depend only on those; `orders` depends on five others and nothing depends on `orders`. `platform.auth-interceptors` -> `accounts.api`, and `accounts` depends on no HTTP component. `platform.log -> json` and `platform.validation -> json` point from a leaf to a leaf. No cycle. (The earlier photos <-> catalog cycle stays removed: `catalog` owns the photo entity.)
 
-Rules inside a slice: Pure Core (`logic.clj` requires no I/O namespaces), Imperative Shell (handlers fetch, decide, transact), other slices only through `<slice>.api`, only the owning slice writes an entity's attributes, except the db functions named above.
+Rules inside a slice: Pure Core (`logic.clj` requires no I/O namespaces; `photos/csv.clj` is also pure), Imperative Shell (handlers fetch, decide, transact), other slices only through `<slice>.api`, only the owning slice writes an entity's attributes, except the db functions named above and the migrations that write `:policy/*`.
 
 ### 2.3 Frontend server components (owner: frontend-cljs)
-Project `ssr/` with its own `ssr/deps.edn`; sources `ssr/src/zandy/ssr/`; it also puts `../src/shared` on its classpath. It never touches Datomic, and it keeps no request state.
+Project `ssr/` with its own `ssr/deps.edn`; sources `ssr/src/zandy/ssr/` (development helpers `stub-api` and `dev-proxy` live under `ssr/dev`); it also puts `../src/shared` on its classpath. It never touches Datomic, and it keeps no request state.
 
 | Component | Single responsibility |
 |---|---|
 | `ssr.config` | Aero + Malli config (`API_BASE_URL`, `SITE_BASE_URL`, `SITE_INDEXABLE`, `STATIC_DIR`, `PAGE_CACHE_*`, `API_TIMEOUT_MS`, `PORT`). |
 | `ssr.log` | Structured JSON logs (same shape as the backend). |
-| `ssr.api-client` | The only namespace that makes HTTP calls. `java.net.http.HttpClient` (JDK, no library), 3 s timeout, forwards or creates `X-Request-Id`, sends `Accept: application/json`, returns data or an error value. Parses JSON into keyword-keyed maps with the same camelCase keys the browser sees. |
+| `ssr.api-client` | The only namespace that makes HTTP calls. `java.net.http.HttpClient` (JDK, no library), 3 s timeout, forwards or creates `X-Request-Id`, sends `Accept: application/json`, returns data or an error value. Parses JSON with jsonista into keyword-keyed maps with the same camelCase keys the browser sees. Receives its configuration as an argument. |
 | `ssr.pages` | For each page route, the API calls of api-contract.md section 12 (independent calls in parallel) and the assembly of page data. Pure mapping lives in `shared.pages`. |
 | `ssr.render` | Calls `shared.document/render-page` and sets status and `Cache-Control` (from `PAGE_CACHE_*`, defaults from design-spec.md section 0), `ETag`, security headers including CSP. |
-| `ssr.seo-routes` | `robots.txt` and `sitemap.xml` (from `GET /api/sitemap-entries`), environment-aware via `SITE_INDEXABLE` and `SITE_BASE_URL`. |
-| `ssr.static` | Serve `STATIC_DIR` under `/static/` with the headers in section 5. |
+| `ssr.seo-routes` | `robots.txt` and `sitemap.xml` (from `GET /api/sitemap-entries`), environment-aware via `SITE_INDEXABLE` and `SITE_BASE_URL`; the XML head is `ssr/resources/sitemap-head.xml`. |
+| `ssr.static` | Serve `STATIC_DIR` under `/static/` with the headers in section 5, and read `asset-manifest.edn` (logical name to fingerprinted file name). `current-manifest` re-reads the manifest on every page request, on purpose, so a new release's files are picked up without restarting `ssr`; `ssr.system` also reads it once when building the context. |
 | `ssr.launch-gate` | At boot with `SITE_INDEXABLE=true`, fetch the four policies and exit non-zero if any `reviewStatus` is not `approved` (retries the API for up to 60 s). |
 | `ssr.http` | Pedestal connector: one catch-all handler that matches the path with the shared Reitit route table (`reitit.core/match-by-path`), plus `/static/*`, `/robots.txt`, `/sitemap.xml`, `/healthz`. Interceptors: request id, access log, error handling (503 page on API failure, `no-store`). Using Reitit only as a data matcher avoids any Reitit-Pedestal integration risk on this server. |
-| `ssr.system` | Integrant system and `-main`. |
+| `ssr.system` | Integrant system and `-main` (exits non-zero on start-up failure). |
 
-Dependency list:
+Dependency list (as enforced by `frontend_deps.clj`):
 ```
 ssr.config, ssr.log        -> (none)
-ssr.api-client             -> ssr.config, ssr.log
-ssr.pages                  -> ssr.api-client, shared.routes
-ssr.render                 -> ssr.config, shared.document
-ssr.seo-routes             -> ssr.api-client, ssr.config
-ssr.static                 -> ssr.config
-ssr.launch-gate            -> ssr.api-client, ssr.config
-ssr.http                   -> ssr.pages, ssr.render, ssr.seo-routes, ssr.static, shared.routes
+ssr.api-client             -> shared.routes
+ssr.pages                  -> ssr.api-client, shared.pages, shared.routes
+ssr.render                 -> shared.document, shared.pages
+ssr.seo-routes             -> ssr.api-client, shared.routes
+ssr.static                 -> (none)
+ssr.launch-gate            -> ssr.api-client, ssr.log
+ssr.http                   -> every ssr component, shared.pages, shared.routes
 ssr.system                 -> every ssr component
+ssr.stub-api, ssr.dev-proxy (ssr/dev) -> (none)
 ```
 
 ### 2.4 Shared and browser components (owner: frontend-cljs)
@@ -155,38 +180,51 @@ Roots `src/shared/zandy/shared/` (`.cljc`, runs on the JVM inside `ssr` and in t
 | Component | Responsibility |
 |---|---|
 | `shared.routes` | Page route table (Reitit data): name, path, `:ssr?`, `:access`. |
-| `shared.format`, `shared.cart`, `shared.seo` | Pure formatting, cart functions, head tags. |
-| `shared.ui.*`, `shared.pages.*` | Replicant components and the public page views (P1 to P17), pure functions of page data. |
+| `shared.format`, `shared.cart`, `shared.seo`, `shared.json` | Pure formatting (including the fixed +3 Kampala time conversion), cart functions, head tags, JSON helpers for the embedded state. |
+| `shared.ui.*`, `shared.pages.*`, `shared.pages` | Replicant components and the public page views (P1 to P17), pure functions of page data. `shared.pages` is the dispatcher over `shared.pages.*` and the pure page-data layer used by both `ssr` and the browser (DA5). |
 | `shared.document` | `render-page`: full HTML document via `replicant.string`, including head tags, `<script id="initial-state" type="application/json">` (with `<` escaped) and the script/CSS links. Called only by `ssr.render`. |
-| `frontend.main`, `frontend.state`, `frontend.effects`, `frontend.api`, `frontend.router`, `frontend.cart-store` | Browser entry, single state atom with data-only actions, effects shell, the only `js/fetch` user (relative URLs under `/api`, no base URL), client navigation, localStorage cart. |
-| `frontend.admin.*` | Admin area A1 to A13, client-rendered only. A13 (Help) renders topics generated from `admin-help.md` by `scripts/build/help.clj` (frontend-cljs) into a committed data namespace; no runtime Markdown parser and no backend endpoint. Owner-only topics are filtered by the session role. |
+| `frontend.main`, `frontend.state`, `frontend.effects`, `frontend.api`, `frontend.router`, `frontend.cart-store` | Browser entry, single state atom with data-only actions, effects shell (including head updates through `shared.seo`), the only `js/fetch` user (relative URLs under `/api`, no base URL; query encoding through `shared.routes`), client navigation, localStorage cart. |
+| `frontend.admin.*` | Admin area A1 to A13, client-rendered only: `admin.core` (views), `admin.state` (action handlers that extend `frontend.state`; pure, no network), `admin.widgets` (admin pieces shared by `core` and the Portfolio scenes), `admin.help` (pure role filter) and `admin.help-data` (generated). A13 (Help) renders topics generated from `admin-help.md` by `scripts/build/help.clj` (frontend-cljs) into the committed data namespace `help_data.cljs`; no runtime Markdown parser and no backend endpoint. Owner-only topics are filtered by the session role as a UI convenience only (see "Help text is public"). |
 | `frontend.scenes.*` | Portfolio scenes; not reachable from `frontend.main`. |
 
-Dependency list:
+Dependency list (as enforced by `frontend_deps.clj`):
 ```
-shared.format, shared.cart -> (none)
-shared.routes              -> reitit-core
-shared.seo                 -> shared.format
-shared.ui.*                -> shared.format
-shared.pages.*             -> shared.ui.*, shared.format
-shared.document            -> shared.routes, shared.pages.*, shared.seo, replicant.string
-frontend.api               -> (none beyond js/fetch)
+shared.format, shared.cart, shared.json, shared.routes (-> reitit-core) -> (none)
+shared.seo                 -> shared.format, shared.json, shared.routes
+shared.ui.core             -> shared.format
+shared.ui.layout           -> shared.cart, shared.format, shared.routes, shared.ui.*
+shared.ui.product, .order  -> shared.format, shared.routes, shared.ui.*
+shared.ui.policy           -> shared.format, shared.ui.*
+shared.pages.*             -> shared.format, shared.routes, shared.cart, shared.ui.*
+shared.pages               -> shared.pages.*, shared.routes, shared.ui.*
+shared.document            -> shared.json, shared.pages, shared.seo, replicant.string
+frontend.api               -> shared.routes
 frontend.cart-store        -> shared.cart
 frontend.router            -> shared.routes
-frontend.state             -> shared.cart, shared.format
-frontend.effects           -> frontend.api, frontend.router, frontend.cart-store
-frontend.admin.*           -> shared.ui.*, shared.format
-frontend.main              -> shared.routes, shared.pages.*, frontend.admin.*, frontend.state, frontend.effects
-frontend.scenes.*          -> shared.ui.*, shared.pages.*, frontend.admin.*
+frontend.state             -> shared.*
+frontend.effects           -> frontend.api, frontend.cart-store, frontend.router, shared.json, shared.seo
+frontend.admin.help-data   -> (none)
+frontend.admin.help        -> admin.help-data, shared.*
+frontend.admin.state       -> admin.help, frontend.state, shared.*
+frontend.admin.widgets     -> shared.*
+frontend.admin.core        -> admin.help, admin.state, admin.widgets, shared.*
+frontend.main              -> admin.core, cart-store, effects, router, state, shared.pages
+frontend.scenes.*          -> admin.core, admin.help, admin.widgets, scenes.*, shared.*
 ```
-`src/shared` must not require `zandy.frontend.*`, `zandy.ssr.*`, `zandy.backend.*`, `datomic`, `io.pedestal`, and must not use `js/`. The browser does hydrate by replacing `#app` with identical markup if true takeover is unavailable (the spike from D2 stands: frontend-cljs confirms how Replicant's DOM renderer takes over server markup; the design does not depend on it). No cycle.
+`src/shared` must not require `zandy.frontend.*`, `zandy.ssr.*`, `zandy.backend.*`, `datomic`, `io.pedestal`, and must not use `js/`. A namespace without an entry in the script fails the check, so new namespaces are added to the table on purpose. No cycle.
+
+Browser start-up (DA7). The browser does not take over the server markup. Replicant's DOM renderer clears the container on its first render (`replicant.dom/render` sets the container's `innerHTML` to empty), so `frontend.main` renders the same views from the embedded state and replaces `#app` with identical markup. SEO, first paint and no-JavaScript browsing come from the server HTML and are unaffected. The accepted cost: when JavaScript arrives late, focus and a half-typed field are lost at that moment (qa-report.md B25). Check B25 (section 7.2) pins what must still hold: one `h1`, no duplicate `id`, scroll position unchanged.
+
+Category navigation on phones (DA6, owner-confirmed 26 October 2026). The category list is a horizontally scrolling strip (`styles/30-pages.css`, `.site-nav__list`), not a collapsing menu; this departs from design-spec.md ("collapsing to a menu on mobile"), which ux-designer is to amend. It needs no JavaScript, so it works in the server HTML. Conditions that qa re-checked and found met after the fixes: every link is reachable by keyboard and fully visible when focused, a visible fade cue shows on the side that has hidden links, and at 320 px width and 200% zoom the page does not scroll sideways (WCAG 1.4.10). The menu and close icons of design-spec section 6 are unused.
+
+Help text is public (DA10, owner-accepted). `help_data.cljs` is compiled into `main.<hash>.js`, which anyone can download, so the text of owner-only topics is readable by the public. It contains procedures and button names, no credential, token or address. The role filter in `admin.help` is a UI convenience; the real protection is server-side (every `/api/admin/staff*` route is `:access :owner`, tested for 403 with a support session). If the text ever must be private, serve it from an authenticated endpoint and remove it from the bundle (a contract change).
 
 ### 2.5 How a public page is produced
 1. A request reaches the CDN. A hit within `s-maxage` (or the stale window) is answered there.
 2. On a miss, the edge proxy sends it to an `ssr` instance. `ssr.http` matches the path with the shared route table.
 3. `ssr.pages` calls the backend API (via `API_BASE_URL`, the internal proxy address) for the data listed in api-contract.md section 12, in parallel, with a 3 s timeout.
 4. `shared.document/render-page` returns the HTML with title, meta description, canonical, Open Graph, JSON-LD, the body, and the embedded initial state.
-5. The browser paints the HTML; browsing, GET search forms and pagination links work without JavaScript. `frontend.main` then renders the same views over `#app` from the embedded state. Later navigation, cart, checkout, tracking and admin call `/api/*` directly (same origin, so the `zt_session` cookie works and no CORS exists).
+5. The browser paints the HTML; browsing, GET search forms and pagination links work without JavaScript. `frontend.main` then renders the same views over `#app` from the embedded state, replacing the server markup (see "Browser start-up"). Later navigation, cart, checkout, tracking and admin call `/api/*` directly (same origin, so the `zt_session` cookie works and no CORS exists).
 6. If the API is unreachable or returns 5xx, `ssr` returns HTTP 503 with the calm error page, `Retry-After` and `Cache-Control: no-store`.
 
 ---
@@ -196,21 +234,21 @@ frontend.scenes.*          -> shared.ui.*, shared.pages.*, frontend.admin.*
 ### 3.1 Datastore
 Datomic (named in the standards): Datomic Pro peer library in each `backend` instance, one transactor with embedded `dev` storage (accepted for launch by the owner), `datomic:mem://` for tests and local development. Reasons and the multi-instance interaction are in D3 and section 5. `ssr` has no datastore.
 
-Conventions: every entity has `:x/id` (uuid, `db.unique/identity`, from `d/squuid`); kebab-case namespaced attributes, camelCase only on the wire (`platform.json`); money is `:db.type/long` UGX; instants are `:db.type/instant`; enumerations are `:db/ident` keywords; optimistic concurrency by `:db/cas` on `:product/version` and `:order/version` (409 `versionConflict`). High-churn operational attributes (`:ratelimit/*`, `:idempotency/*`, `:session/last-seen-at`, `:outbox/attempts`, `:outbox/claimed-*`) are declared `:db/noHistory true`, because Datomic otherwise keeps every past value forever.
+Conventions: every entity has `:x/id` (uuid, `db.unique/identity`, from `d/squuid`); kebab-case namespaced attributes, camelCase only on the wire (`platform.json`); money is `:db.type/long` UGX; instants are `:db.type/instant` and travel as ISO 8601 UTC `Z` (display in Kampala time is a frontend concern, section 1); enumerations are `:db/ident` keywords; optimistic concurrency by `:db/cas` on `:product/version` and `:order/version` (409 `versionConflict`). High-churn operational attributes (`:ratelimit/*`, `:idempotency/*`, `:session/last-seen-at`, `:outbox/attempts`, `:outbox/claimed-*`) are declared `:db/noHistory true`, because Datomic otherwise keeps every past value forever.
 
 ### 3.2 Entities, relationships and write owners
 | Entity | Key attributes | Relationships | Writes owned by |
 |---|---|---|---|
 | `category` | id, slug, name, description, sort-order | has many products | `catalog` (seeded by migration) |
-| `product` | id, slug, sku (unique, optional), name, brand, own-brand?, price (nullable while draft), short-description, description, size, how-to-use, ingredients, featured?, status (draft, published, archived), first-published-at, stock-quantity (long, never negative), version, created-at, updated-at | category (ref), updated-by (ref user), images | `catalog`; `stock-quantity` also written by the `orders` db functions (B4 exception) |
-| `product-image` | id, position, alt | product, photo (refs) | `catalog` |
-| `photo` | id, original-filename, content-type, width, height, uploaded-at, seed? | uploaded-by (ref user) | `catalog` (called by `photos`) |
+| `product` | id, slug, sku (unique, optional, stored upper case), name, brand, own-brand?, price (nullable while draft), short-description, description, size, how-to-use, ingredients, featured?, status (draft, published, archived), first-published-at, stock-quantity (long, never negative), version, created-at, updated-at | category (ref), updated-by (ref user), images | `catalog`; `stock-quantity` also written by the `orders` db functions (B4 exception) |
+| `product-image` | id, position, alt | product, photo (ref, **component**: the photo is part of the product-image, migration 0010) | `catalog` |
+| `photo` | id, original-filename, content-type, width, height, uploaded-at, seed? | uploaded-by (ref user); exists only as a component of one product-image | `catalog` (called by `photos` and the seed) |
 | `stock-movement` | id, type (initial, adjustment, order, orderCancelled), reason, delta, quantity-after, note, at | product (ref), by (ref user, nil for system), order (ref, optional) | `catalog` (adjustments, initial); `orders` db functions (order, orderCancelled) |
-| `order` | id, number (unique `ZT-XXXXXX`), status, placed-at, customer-name, customer-phone (E.164), customer-email, preferred-contact, delivery-country/city/area/address-line/directions, payment-method, payment-method-used, note, staff-note, delivery-fee (nullable), delivery-fee-set-by/at, cancel-reason, stock-restored?, version, updated-at, idempotency-key | order-lines (components), order-events, one acceptance | `orders` |
+| `order` | id, number (unique `ZT-XXXXXX`), status, placed-at, customer-name, customer-phone (E.164), customer-email, preferred-contact, delivery-country/city/area/address-line/directions, payment-method, payment-method-used, note, staff-note, delivery-fee (nullable), delivery-fee-set-by/at, cancel-reason, stock-restored?, version, updated-at, idempotency-key (unique) | order-lines (components), order-events, one acceptance | `orders` |
 | `order-line` | product-id (uuid), product-name, unit-price, quantity | order | `orders` |
 | `order-event` | id, status, at, note | order, by (ref user, nil for customer) | `orders` |
 | `acceptance` | id, policy-type, policy-version, content-hash, accepted-at, customer-name, customer-phone | order | `orders` |
-| `policy` | type, version, title, review-status (placeholder, approved), summary, blocks (EDN text), content-hash, effective-from, current? | none | migrations only (`policies` reads) |
+| `policy` | key (`type/version`), type, version, title, review-status (placeholder, approved), summary, blocks (EDN text), content-hash, effective-from, current? | none | `platform.migrations` only (`policies` reads) |
 | `user` | id, name, email (unique), role, password-hash, active?, must-change-password?, notify-on-new-order?, created-at, last-sign-in-at | referenced by events, movements, products | `accounts` |
 | `session` | id-hash (SHA-256 of cookie value), created-at, last-seen-at, expires-at, revoked? | user | `accounts` |
 | `reset-token` | token-hash, expires-at, used-at | user | `accounts` |
@@ -218,25 +256,27 @@ Conventions: every entity has `:x/id` (uuid, `db.unique/identity`, from `d/squui
 | `contact-message` | id, name, phone, email, message, received-at | none | `engagement` |
 | `outbox` | id, kind, to, subject, body-text, status (pending, claimed, sent, failed), attempts, claimed-by, claimed-at, created-at, sent-at, last-error | none | `notifications`; created inside the `orders` db functions (B4 exception) |
 | `ratelimit` | key (unique, e.g. `login-ip:1.2.3.4`), count, window-end, locked-until | none | `platform.rate-limit` |
-| `idempotency` | scoped-key (unique, "METHOD path key"), body-hash, result-kind, result-id, created-at | none | `platform.idempotency` |
+| `idempotency` | scoped-key (unique, "METHOD path key", query excluded), state (in-progress, done), claim-token, body-hash (fingerprint of the body or every multipart part, plus the query string), response (EDN, the stored response), created-at | none | `platform.idempotency` |
 | `migration` | id (unique), checksum, applied-at | none | `platform.migrations` |
 
 Notes:
 - Order totals are derived, never stored. `availability` and `maxQuantity` are derived from `stock-quantity` and `maxQuantityPerLine`. The low-stock threshold (5) and per-line maximum (10) come from config (design-spec Q15).
-- Policies are data in Datomic, loaded by migrations from `resources/policies/<type>/<version>.edn` (blocks as data, so no markdown parser exists anywhere). Approving a text after human review is a new migration that sets `review-status` to `approved`; a changed text is a new version with a new hash.
+- Stock tabs (contract 8.1): `GET /api/admin/products` with `stock=out` or `stock=low` and no explicit `status` lists published products only, so each tab shows exactly the products its `counts` entry counts (`counts.out`, `counts.low`, published products). With an explicit `status` the status wins. This is a contract rule decided after the design; it lives in the catalog slice's query.
+- Policies are data in Datomic, loaded by migrations from `resources/policies/<type>/<version>.edn` (blocks as data, so no markdown parser exists anywhere). Approving a text after human review is a new migration; a changed text is a new version with a new hash. The owner reviewed and approved the four texts on 26 October 2026: migration `0011-approved-policies` adds the `2026-10-26` versions as current (review-status approved) and sets `current?` false on the `2026-10-01` drafts, which stay in the database so earlier order acceptances still point at the version that was accepted. Staging serves the approved texts since 26 October 2026.
 - Search is in-memory substring filtering of the published set in `catalog.logic` (a few hundred products; Datomic fulltext would give whole-word semantics that do not match the contract).
-- Data retention (owner decision, Q9): customer personal data is kept for 6 months. A daily retention job in `orders` and `engagement` excises (Datomic `:db/excise`) the customer name, phone, email, address and directions of orders closed (delivered or cancelled) more than 6 months ago, the matching `acceptance` name and phone, and contact messages received more than 6 months ago. Order numbers, lines, totals and status history stay for the books. Retraction is not enough because Datomic keeps history. The job is idempotent and safe on several instances. Excision is heavy on the transactor, so it runs in small batches at night. Check: `clojure -M:test -n zandy.retention-test` **(backend-clojure)** shows the attributes gone from `d/history` after the job.
+- Data retention (owner decision, Q9): customer personal data is kept for 6 months, in code 183 days. The hourly `::jobs` tick calls `orders/run-retention!` and `engagement/run-retention!`, which excise (Datomic `:db/excise`, only the personal attributes) the customer name, phone, email, address and directions of orders closed (delivered or cancelled) more than 183 days ago, the matching `acceptance` name and phone, and contact messages received more than 183 days ago. Order numbers, lines, totals and status history stay for the books. Retraction is not enough because Datomic keeps history. Each call processes a bounded batch, is idempotent and safe on several instances; excision is heavy on the transactor, which is why it is batched. Stored idempotency responses (which can hold a customer's name and phone) are `noHistory` and deleted after 24 hours, so they never outlive this rule. Check: `clojure -M:test -n zandy.retention-test` **(backend-clojure)** shows the attributes gone from `d/history` after the job.
 
 ### 3.3 Versioned migrations with Datomic
-- Files `resources/migrations/NNNN-description.edn`, each `{:id :description :tx-data [...]}` or `{:id ... :fn ...}` for data changes. Db functions (transaction functions) are installed by migrations from `resources/migrations/dbfns/*.clj` and use only `clojure.core`, because the transactor runs them.
+- Files `resources/migrations/NNNN-description.edn`, each a map `{:id :description :tx-data [...] :dbfns [{:ident :params :file}] :policy-files [...]}`; every key except `:id` and `:description` is optional, and there is no `:fn`. `:tx-data` holds schema and data changes; `:dbfns` installs transaction functions from `resources/migrations/dbfns/*.clj` (they use only `clojure.core` plus `datomic.api`, because the transactor runs them); `:policy-files` loads policy documents from `resources/policies/`. The runner turns them into one transaction in that order. Examples: `0010-pictures-belong-to-products.edn` (alters `:product-image/photo` to a component), `0011-approved-policies.edn` (`:tx-data` plus `:policy-files`).
 - `platform.migrations` keeps a ledger of `:migration/*` entities; each migration and its ledger entry go in one transaction. It refuses to run if an applied file's checksum changed, a ledger id has no file, or numbers have a gap.
-- Production and staging apply migrations with `clojure -M:migrate` as an explicit step before any instance starts (deployment-engineer's deploy script). Instances check at boot that the ledger is current and refuse to start otherwise. This avoids two instances racing to migrate.
+- Production and staging apply migrations with `clojure -M:migrate` as an explicit step before any instance starts (deployment-engineer's deploy script). Instances check at boot that the ledger is current and refuse to start otherwise ("Database is not migrated. Run `clojure -M:migrate` first."). This avoids two instances racing to migrate.
 - Schema is defined nowhere else. The same runner builds `datomic:mem` in every test.
+- A database created before migration 0010 (a staging database from an earlier release) should be recreated or checked once, since 0010 changes how pictures are owned. No production data existed when 0010 was made.
 
 ### 3.4 Where files live
-- Photos: `MEDIA_DIR` on the server disk through the `MediaStore` protocol. `public/{photoId}-{thumb|medium|large}.webp` public. The uploaded original is deleted once the variants are written (owner decision, Q5). Several backend instances on the same host share the directory. A backend instance on another host needs the `s3` implementation (PE5).
-- Seed images and manifest: `resources/seed/images/` (files `seed-<sku>-<n>.jpg`) with `resources/seed/images/manifest.edn` (machine-readable: file, sku, alt, source URL, author, licence, date retrieved) and `resources/seed/images/SOURCES.md` (human-readable view of the same facts). Owner: backend-clojure, who sources the images (CC0 or public domain only, per visual-guide.md "Seed images"). `clojure -M:seed` (alias in the root `deps.edn`, code in `src/backend/zandy/seed/`) is idempotent by SKU, writes the 22 published products and 1 draft of design-spec.md section 9 through the same `catalog` and `photos` functions the API uses, stores the images through `MediaStore` marked `seed? true`, and writes `initial` stock movements. It is run on staging and, before launch, on production (so the shop is browsable), and the launch gate removes it. Seed data contains no secrets.
-- Static files (bundle, CSS, fonts, icons, logo): `STATIC_DIR` on the `ssr` host (4.2). Policy texts: `resources/policies/`.
+- Photos: `MEDIA_DIR` on the server disk through the `MediaStore` protocol. `public/{photoId}-{thumb|medium|large}.webp` public, served by `features/photos/routes.clj` `serve-media` at `/media/...`. The uploaded original is deleted once the variants are written (owner decision, Q5). Several backend instances on the same host share the directory. A backend instance on another host needs the `s3` implementation (PE5).
+- Seed images and manifest: `resources/seed/images/` (files `seed-<sku>-<n>.jpg`) with `resources/seed/images/manifest.edn` (machine-readable: file, sku, alt, source URL, author, licence, date retrieved) and `resources/seed/images/SOURCES.md` (human-readable view of the same facts). Owner: backend-clojure, who sources the images (CC0 or public domain only, per visual-guide.md "Seed images"). `clojure -M:seed` (alias in the root `deps.edn`, code in `src/backend/zandy/seed/`) is idempotent by SKU, writes the 22 published products and 1 draft of design-spec.md section 9 through the same `catalog` functions the API uses, stores the images through `MediaStore` marked `seed? true`, and writes `initial` stock movements. It is run on staging and, before launch, on production (so the shop is browsable), and the launch gate removes it. Seed data contains no secrets.
+- Static files (bundle, CSS, fonts, icons, logo, site photos under `assets/photos/`): `STATIC_DIR` on the `ssr` host (4.2). Policy texts: `resources/policies/`.
 - Everything else lives in Datomic.
 
 ---
@@ -248,28 +288,31 @@ Two builders, one tree each. Anything not listed is read-only for builders. Ever
 ### 4.1 Map
 | Path | Owner | Notes |
 |---|---|---|
-| `deps.edn` (root) | backend-clojure | Backend only. `:paths ["src/backend" "resources"]`. Aliases `:run`, `:test` (adds `test/backend`), `:migrate`, `:bootstrap-owner`, `:seed`, `:send-test-mail`. |
+| `deps.edn` (root) | backend-clojure | Backend only. `:paths ["src/backend" "resources"]`. Aliases `:run` (dev profile baked in; never used for a production start), `:test` (adds `test/backend`), `:migrate`, `:bootstrap-owner`, `:seed`, `:send-test-mail`. There is no alias that puts `dev/` on the classpath, so `dev/user.clj` (REPL helpers) is loaded only by a REPL started with extra paths on the command line; it is still linted by B1 and B26. |
 | `src/backend/**`, `test/backend/**`, `dev/**` | backend-clojure | Section 2.2. |
-| `resources/**` | backend-clojure | `config.edn`, `migrations/**` (including `dbfns/`), `policies/**`, `seed/**` (including images and manifest). The policy texts are supplied by the owner (open question Q8); backend places them. |
-| `.clj-kondo/config.edn` | backend-clojure | Root lint config for backend; its banned-namespace list may only grow. |
+| `resources/**` | backend-clojure | `config.edn`, `migrations/**` (including `dbfns/`), `policies/**`, `seed/**` (including images and manifest). The policy texts are supplied by the owner (Q8); backend places them. |
+| `.clj-kondo/config.edn` | backend-clojure | Root lint config for backend; its banned-namespace list may only grow; `:missing-docstring` at warning level (B26). |
 | `scripts/check/backend_deps.clj`, `scripts/check/seed_manifest.clj` | backend-clojure | Babashka fitness scripts (section 7). qa runs them and does not author them. |
-| `ssr/**` (`deps.edn`, `src/`, `test/`, `resources/`, `.clj-kondo/`) | frontend-cljs | The frontend server (2.3). Aliases `:run`, `:test` (adds `ssr/test`, `../test/shared`). |
+| `ssr/**` (`deps.edn`, `src/`, `dev/`, `test/`, `resources/`, `.clj-kondo/`) | frontend-cljs | The frontend server (2.3). Aliases `:run`, `:test` (adds `ssr/test`, `../test/shared`, `../scripts/build`, `../test/frontend`). |
 | `src/frontend/**`, `src/shared/**`, `test/frontend/**`, `test/shared/**`, `styles/**` | frontend-cljs | Browser app, shared views and their tests, page and component CSS using only `var(--...)` from design-tokens.css. |
 | `shadow-cljs.edn`, `package.json`, `package-lock.json` | frontend-cljs | Builds `:app`, `:portfolio`, `:test`. `:dependencies` lists ClojureScript libraries, `:deps false`. Dev dependencies only in npm. |
-| `scripts/build/**`, `scripts/check/frontend_deps.clj` | frontend-cljs | `assets.clj` (4.2); the frontend fitness script. |
-| `Dockerfile.backend`, `Dockerfile.ssr`, `deploy/**`, `scripts/ops/**`, CI config | deployment-engineer | Whatever its chosen hosting needs (proxy config, service definitions, transactor properties, environment templates with variable names only, CDN rules, backup and restore, smoke scripts, `deploy/COSTS.md`). Never edits application source. |
-| `design-tokens.css`, `assets/**`, `scripts/design/**`, `visual-guide.md`, `brand-brief.md` | visual-designer | Read-only to builders. |
-| `design-spec.md`, `user-journeys.md`, `scope-checklist.md`, `admin-help.md` | ux-designer | Read-only to builders. `admin-help.md` is the staff help text (A13); frontend-cljs converts it at build time and never edits it. |
+| `scripts/build/**`, `scripts/check/frontend_deps.clj` | frontend-cljs | `assets.clj`, `help.clj`, `build.sh` (4.2); the frontend fitness script. |
+| `Dockerfile.backend`, `Dockerfile.ssr`, `deploy/**`, `scripts/ops/**`, CI config | deployment-engineer | Whatever its chosen hosting needs (proxy config, service definitions, transactor properties, environment templates with variable names only, CDN rules, backup and restore, smoke scripts, the staging mail sink, `deploy/COSTS.md`, `deploy/DECISIONS.md`). Never edits application source. |
+| `design-tokens.css`, `assets/**`, `scripts/design/**`, `visual-guide.md`, `brand-brief.md` | visual-designer | Read-only to builders. Approved one-off edits by the lead (DA9, section 13): `assets/photos/`, `assets/logo/zandy-touch-*.webp`, `assets/share/`; ownership does not move. |
+| `design-spec.md`, `user-journeys.md`, `scope-checklist.md`, `admin-help.md` | ux-designer | Read-only to builders. `admin-help.md` is the staff help text (A13); frontend-cljs converts it at build time and never edits it. Wording that follows the code may be fixed by the lead; a change of meaning goes through ux-designer. |
 | `api-contract.md` | architect amends (ux-designer drafted) | Builders request changes by message. |
-| `engineering-standards.md`, `business-context.md`, `architecture.md`, `architecture-review.md` | the human owner / architect | Read-only to builders. |
+| `engineering-standards.md`, `business-context.md`, `architecture.md`, `architecture-review.md`, `CODE-GUIDE.md` | the human owner / architect (CODE-GUIDE.md: written by the lead as a reading guide) | Read-only to builders. |
 | `target/`, `ssr/target/`, `media/`, `.cpcache/`, `.shadow-cljs/`, `node_modules/` | generated, git-ignored | Never committed. |
 
 `deps.edn`, `ssr/deps.edn` and `shadow-cljs.edn` are separate files so the two builders never edit the same one. `qa` runs the checks and writes only its own reports. Cross-builder changes go through api-contract.md and a message to the architect.
 
+Recorded one-off edits by the lead (DA9, approved 26 October 2026; owners unchanged): `assets/photos/`, `assets/logo/zandy-touch-*.webp` and `assets/share/`; `resources/seed/images/*` and `resources/seed/products.edn` (CC0 or public-domain replacements with a manifest); small wording edits to `admin-help.md`; the `scripts/build/help.clj` parser fix (pinned by `help_build_test.clj` `a-paragraph-may-start-with-bold`). Conditions: each file keeps a provenance line, B16 stays clean after the build, and the next run of the owning agent is told these files exist.
+
 ### 4.2 Static assets and design-tokens.css (visual-guide.md section 11)
 - Public URLs: `/static/design-tokens.css`, `/static/assets/fonts/...`, `/static/assets/{logo,icons,badges}/...`, `/static/assets/favicon.svg` and the PNG icons and `site.webmanifest`, `/static/css/...`, `/static/js/main.<hash>.js`. The `@font-face` URLs are relative (`assets/fonts/x.woff2`) and resolve correctly because the tokens CSS and `assets/` stay side by side under `/static/`. No file in design-tokens.css needs editing.
-- `bb scripts/build/assets.clj` (frontend-cljs) copies `design-tokens.css`, `assets/` and `styles/**` into `target/static/` (CSS files get a content hash in the file name; an `asset-manifest.edn` maps logical names to hashed names and `ssr` reads it at boot), and never modifies sources. shadow-cljs writes hashed bundles to `target/static/js`. Build: `scripts/build/build.sh` (runs `npm ci`, `bb scripts/build/help.clj` to regenerate the staff help data from `admin-help.md`, `npx shadow-cljs release app`, `bb scripts/build/assets.clj`, then `bb scripts/build/help.clj --check`).
-- Release layout: `Dockerfile.ssr` image contains the `ssr` classpath; the static files are copied by the deploy script into the host directory `STATIC_DIR`. The deploy script adds new files and keeps files from earlier releases for at least 14 days, so a CDN-cached HTML page that still names last release's bundle never gets a 404 (check R5).
+- `bb scripts/build/assets.clj` (frontend-cljs) copies `design-tokens.css`, `assets/` and `styles/**` into `target/static/` (CSS files get a content hash in the file name; an `asset-manifest.edn` maps logical names to hashed names), and never modifies sources. `ssr` reads the manifest on every page request (`ssr.static/current-manifest`), so a release is picked up without restarting `ssr`. shadow-cljs writes hashed bundles to `target/static/js`.
+- Build: `scripts/build/build.sh` runs `npm ci`, `bb scripts/build/help.clj` (regenerates the staff help data namespace from `admin-help.md`), `npx shadow-cljs release app`, then `bb scripts/build/assets.clj`. It does not run `help.clj --check`: a check run right after regeneration can never fail. What catches stale committed help data: the JVM test `help_build_test.clj` `data-namespace-is-up-to-date` (runs in `cd ssr && clojure -M:test`, whose `:test` alias adds `../scripts/build` and `../test/frontend`), the ClojureScript tests in `help_test.cljs`, and `bb scripts/build/help.clj --check` run by hand (or in CI) before the build. The parser rejects unknown syntax, unknown ids, links from a support topic to an owner-only topic, and any admin page A4 to A12 without a topic, with a line number.
+- Release layout: `Dockerfile.ssr` image contains the `ssr` classpath; the static files are copied by the deploy script into the host directory `STATIC_DIR`. The deploy script adds new files and keeps files from earlier releases for at least 14 days, so a CDN-cached HTML page that still names last release's bundle never gets a 404 (check R5, D-6).
 - `/favicon.svg` may also be served at the root by `ssr` for crawlers.
 
 ---
@@ -280,40 +323,44 @@ Two builders, one tree each. Anything not listed is read-only for builders. Ever
 |---|---|---|
 | One origin and routing | Edge proxy: `/api/*` and `/media/*` to the backend, all other paths (including `/static/*`, `/healthz`, `robots.txt`, `sitemap.xml`) to `ssr`. The proxy adds an `X-Upstream: backend\|ssr` response header for checking. A CDN sits in front; routing stays in the proxy. | Same-origin means no CORS, the session cookie works, CSP `connect-src 'self'` holds, and the frontend needs no build-time API URL. See D2. |
 | Browser to API | Relative `/api/...` URLs only. `ssr` reads `API_BASE_URL` at runtime (the internal proxy address). | Removes the build-time `API_BASE_URL`; one build for all environments. |
-| Authentication | Staff email + password, Argon2id (Password4j). Server-side session in Datomic: 256-bit random cookie `zt_session` (HttpOnly, Secure, SameSite=Lax, `Path=/api`, no Domain), only its SHA-256 stored; 12 h sliding, 7 d absolute; `last-seen-at` written at most every 5 minutes. | Revocable sessions are required by the contract. `Path=/api` keeps the cookie off public page requests so they stay cacheable. |
-| Authorization | Each route's data declares `:access` (`:public`, `:staff`, `:owner`); `platform.auth-interceptors` enforces it; a route without it fails a startup assertion. `mustChangePassword` and CSRF in the same interceptor. | Non-negotiable server-side authorization, testable by enumerating the route table. |
+| Authentication | Staff email + password, Argon2id (Password4j). Server-side session in Datomic: 256-bit random cookie `zt_session` (HttpOnly, Secure, SameSite=Lax, `Path=/api`, no Domain), only its SHA-256 stored; 12 h sliding, 7 d absolute; `last-seen-at` written at most every 5 minutes. A per-email login lockout and a per-IP limit use `platform.rate-limit`. | Revocable sessions are required by the contract. `Path=/api` keeps the cookie off public page requests so they stay cacheable. |
+| Authorization | Each route's data declares `:access` (`:public`, `:staff`, `:owner`); `platform.auth-interceptors` enforces it; a route without it fails a startup assertion (`assert-route-table!`). `mustChangePassword` and CSRF in the same interceptor. | Non-negotiable server-side authorization, testable by enumerating the route table. |
 | CSRF | Token = HMAC(`SESSION_HMAC_SECRET`, session id), returned by login and `GET /api/auth/sessions/current`, sent as `X-CSRF-Token`. | Nothing to store; works on any instance. |
-| Owner bootstrap | `clojure -M:bootstrap-owner` creates the owner from `OWNER_EMAIL` and `OWNER_INITIAL_PASSWORD`, `mustChangePassword` true. Never in seed data or migrations. | No secrets in the repo (launch gate 3). |
+| Owner bootstrap | `clojure -M:bootstrap-owner` creates the owner from `OWNER_EMAIL` and `OWNER_INITIAL_PASSWORD`, `mustChangePassword` true; it skips quietly when the password is unset. Never in seed data or migrations. | No secrets in the repo (launch gate 3). |
 | Error shape | `{ "error": { "code", "message", "details"? } }`, one constructor in `platform.errors`. `ssr` HTML error pages are separate and never contain API internals. | One shape everywhere (D8 for `details`). |
-| Validation | Malli in each slice's `schema.clj`, closed maps, applied before handlers. `ssr` validates its config and normalises `/shop` and `/categories/*` query parameters with Malli (unknown parameters dropped so they cannot pollute CDN cache keys). | Non-negotiable boundary validation. |
-| Configuration | Aero `#profile` + `#env`, validated at boot. Backend env: `PORT`, `DATOMIC_URI`, `SESSION_HMAC_SECRET`, `OWNER_EMAIL`, `OWNER_INITIAL_PASSWORD` (bootstrap only), `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_DAILY_CAP`, `MEDIA_DIR`, `SITE_BASE_URL`, `CLIENT_IP_HEADER`, and the optional public details (`SITE_PHONE`, `WHATSAPP_NUMBER`, `PUBLIC_EMAIL`, `SHOP_ADDRESS`, `OPENING_HOURS`). SSR env: `PORT`, `API_BASE_URL`, `SITE_BASE_URL`, `SITE_INDEXABLE`, `STATIC_DIR`, `PAGE_CACHE_*`, `API_TIMEOUT_MS`. | Aero is required; values outside the repo satisfy no-secrets. Staging and production differ only by values. |
-| Logging | Structured JSON lines to stdout in both servers; request id, method, route template (never the raw path), status, duration; errors with context; field allowlist keeps passwords, tokens, phones and emails out. The proxy must not log query strings for `/admin/reset-password`. | Required structured logging, privacy-safe. |
+| Validation | Malli in each slice's `schema.clj`, closed maps, applied before handlers by a wrapper in `platform.http`, after body normalisation (trim; blank strings become absent). `ssr` validates its config and normalises `/shop` and `/categories/*` query parameters with Malli (unknown parameters dropped so they cannot pollute CDN cache keys). | Non-negotiable boundary validation. |
+| Bot filtering | A hidden honeypot field `website` on the order, subscription and contact forms; a filled field gets a believable success and no side effect (2.2). Together with per-IP rate limits. | Cheap protection without a third-party captcha (the frontend never calls third parties). |
+| Configuration | Aero `#profile` + `#env`, validated at boot. Backend env: `PORT`, `DATOMIC_URI`, `SESSION_HMAC_SECRET`, `OWNER_EMAIL`, `OWNER_INITIAL_PASSWORD` (bootstrap only), `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_DAILY_CAP`, `MEDIA_DIR`, `SITE_BASE_URL`, `CLIENT_IP_HEADER`, and the optional public details (`SITE_PHONE`, `WHATSAPP_NUMBER`, `PUBLIC_EMAIL`, `SHOP_ADDRESS`, `OPENING_HOURS`, `SOCIAL_INSTAGRAM`, `SOCIAL_TIKTOK`, `SOCIAL_FACEBOOK`). SSR env: `PORT`, `API_BASE_URL`, `SITE_BASE_URL`, `SITE_INDEXABLE`, `STATIC_DIR`, `PAGE_CACHE_*`, `API_TIMEOUT_MS`. The profile comes from `ZANDY_PROFILE`, then the `zandy.profile` property, else `prod`. | Aero is required; values outside the repo satisfy no-secrets. Staging and production differ only by values. |
+| Logging | Structured JSON lines to stdout in both servers; request id, method, route template (never the raw path), status, duration; errors with context; field allowlist keeps passwords, tokens, phones and emails out. The proxy must not log query strings for `/admin/reset-password`. Known gap (H2 in architecture-review.md): the exception message is logged and can carry a value from a Datomic unique-conflict failure; log the class and ex-data keys instead. | Required structured logging, privacy-safe. |
 | Request id | The edge proxy or `ssr` creates `X-Request-Id`; `ssr` forwards it to the backend; both log it; every response echoes it. | One id from edge to datastore. |
-| Idempotency | `Idempotency-Key` stored in Datomic (`:idempotency/*`, unique scoped key) in the same transaction as the business write; replays rebuilt from the stored result id; 24 h retention; one-time secrets never replayed. `place-order` is a single db function, so duplicates, stock and acceptance are decided atomically on the transactor and any instance can handle the retry. | Non-negotiable; works across instances with no lock or cache. |
+| Idempotency | Stored-response design (DA2). The server claims the key with the `idempotency/claim` transaction function (unique scoped key "METHOD path key", body fingerprint), runs the handler, then stores the response (EDN, `noHistory`) under the key for 24 h. A replay returns the stored response with `Idempotent-Replayed: true`; one-time secrets (temporary passwords, reset links) are removed from the stored copy through the route's `:replay-body`. Same key with a different body or query: 409 `idempotencyKeyReused`. A concurrent duplicate waits up to about 5 s, then gets 503 with `Retry-After`; a failed request releases the key; a claim left `in-progress` goes stale after 60 s. `place-order` additionally carries a unique `:order/idempotency-key` in the same transaction as the order, so a duplicate order is impossible even across a crash. **Known narrow window:** the claim and the business write are separate transactions, because the response is stored after the write. A process that dies between the write and the stored response, retried after the 60 s stale window, can repeat a non-order write (stock adjustment, product creation, staff creation, an upload). Orders are not affected. Hardening, not blocking (H5): derive the new entity's id (movement id, product id) from the scoped key so a repeat collides on a unique id; accepted by the owner as documented (CODE-GUIDE.md E4). | Non-negotiable; works across instances with no lock or cache and gives the contract's literal guarantee ("the original response is returned unchanged") without per-feature rebuild code. |
 | Orders and stock | `place-order` and `change-order-status` are transaction functions: check price, status and stock, write order, lines, stock decrements, stock movements, acceptance, history and outbox together, or write nothing (409 `cartOutdated`). | Atomic across instances, no oversell, no partial order. |
-| Sessions, rate limits, outbox claims | All in Datomic (3.2). Rate limits: fixed windows via a transaction function; the check reads first and rejects without writing once the limit is reached, so a flood causes at most `limit` writes per key per window. Outbox: the worker claims a message with `:db/cas` (pending to claimed with `claimed-by`, `claimed-at`); a claim older than 5 minutes may be re-claimed. At-least-once sending. Daily clean-up of expired keys is safe to run on every instance. | Owner decision 2. In-memory limits would multiply by instance count and reset on restart. |
+| Sessions, rate limits, outbox claims | All in Datomic (3.2). Rate limits: fixed windows via a transaction function; the check reads first and rejects without writing once the limit is reached, so a flood causes at most `limit` writes per key per window. Outbox: the worker (every 15 s from `::jobs`) claims a message with `:db/cas` (pending to claimed with `claimed-by`, `claimed-at`); a claim older than 5 minutes may be re-claimed. At-least-once sending. Hourly clean-up of expired keys and old outbox entries is safe to run on every instance. | Owner decision 2. In-memory limits would multiply by instance count and reset on restart. |
 | Multi-instance reads | Each instance is a Datomic peer. A peer sees other peers' writes within milliseconds but not instantly. Lookups by session id, reset token, idempotency key and order number that find nothing call `d/sync` once and retry. | Read-your-writes across instances without sticky sessions. |
 | Migrations | Separate pre-deploy step (3.3). | No boot-time race between instances. |
 | Payments and bookings | No online payment. Orders record the customer's preference and, on delivery, the method used. No bookings. | business-context. |
-| File storage | Photos on `MEDIA_DIR` via `MediaStore`; variants 480/800/1200 px WebP quality about 80, EXIF orientation applied and metadata stripped, by the libvips CLI (at most 2 concurrent jobs); type by magic bytes; limits from the contract. Served by the backend at `/media/...` with `public, max-age=31536000, immutable`. | Meets the contract and visual-guide with no extra service (D5). |
-| Email | Gmail SMTP with an app password from env vars, behind the `Mailer` protocol (D7). From address and alert recipient are both `OWNER_EMAIL`. Sent from the outbox after commit by whichever instance claims the message. Password-reset mails are sent inline and never stored. Failures are logged and never fail a request. | Owner decision 5; contract section 9a. |
+| File storage | Photos on `MEDIA_DIR` via `MediaStore`; variants 480/800/1200 px WebP quality about 80, EXIF orientation applied and metadata stripped, by the libvips CLI (at most 2 concurrent jobs); type by magic bytes; limits from the contract. Served by the backend at `/media/...` (`features/photos/routes.clj` `serve-media`) with `public, max-age=31536000, immutable`. In the prod profile a missing libvips is not detected by the application at start-up; the container entrypoint checks it (CODE-GUIDE.md E2). | Meets the contract and visual-guide with no extra service (D5). |
+| Email | Gmail SMTP with an app password from env vars, behind the `Mailer` protocol (D7). From address and alert recipient are both `OWNER_EMAIL`. Sent from the outbox after commit by whichever instance claims the message. Password-reset mails are sent inline and never stored. Failures are logged and never fail a request. Staging may point `SMTP_*` at a local mail sink that accepts any password and logs the decoded message (section 8); that is a configuration choice, not a second `Mailer`. | Owner decision 5; contract section 9a. |
+| Time | Stored and transmitted in UTC (ISO 8601 `Z`); displayed in Kampala time (UTC+3) by `shared.format`'s fixed-offset arithmetic, identical on JVM and browser; no `js/Date`, `Intl` or `java.time` formatting in shared or frontend code. | Uganda has no daylight saving; one pure function removes server/browser differences in the HTML. |
 | Rate-limit client identity | The edge proxy sets `X-Client-Ip` from the verified client address (the CDN's client-IP header when the connection comes from the CDN's published ranges, else the TCP peer) and strips any inbound value; the backend reads only the header named in `CLIENT_IP_HEADER`. | Clients cannot spoof their address. |
 | Security headers | `ssr` HTML: CSP `default-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`. Backend JSON: `nosniff`. HSTS at the edge proxy. | Enforces "frontend never calls third parties". |
 | Caching | Table in D2 (headers); CDN requirements in section 8. Every response states its own `Cache-Control`; errors are `no-store`. Cookies are never set on cacheable responses. | Contract section 1.5 and design-spec section 0 are the source. |
 | SEO plumbing | `ssr` generates `robots.txt` and `sitemap.xml`. With `SITE_INDEXABLE=false`: `Disallow: /`, `X-Robots-Tag: noindex`, empty sitemap. Admin, cart, checkout, order-placed, track-order, unsubscribe carry `noindex`. | Meets the staging rule without static files. |
-| Launch gate | `ssr` refuses to start with `SITE_INDEXABLE=true` while any policy is `placeholder` (`ssr.launch-gate`). | Scope-checklist proposal accepted: an unreviewed text cannot go live unnoticed. |
+| Launch gate | `ssr` refuses to start with `SITE_INDEXABLE=true` while any policy is `placeholder` (`ssr.launch-gate`). The four approved texts (migration 0011) satisfy it. | Scope-checklist proposal accepted: an unreviewed text cannot go live unnoticed. |
 | Health | Backend `GET /api/healthz` checks the Datomic connection; `ssr` `GET /healthz` checks the process and one cheap backend call. The edge proxy uses them for upstream health checks. | Rolling restarts without dropping requests. |
+| Code documentation | Every namespace and function has a docstring; a "why" comment where the reason is not obvious (engineering-standards.md "Code documentation"). Enforced by clj-kondo `:missing-docstring` at warning level in both lint configs (B26). `CODE-GUIDE.md` is the reading guide for a newcomer and lists where code and design differ. | The owner reads and maintains the code with limited time. |
+| One-shot entry points | `migrate`, `bootstrap-owner`, `seed` and `send-test-mail` are one-shot `-main` functions. Against a real transactor, Datomic peer threads can keep a JVM alive after `-main` returns, so the deploy entrypoint wraps each in `System/exit` (CODE-GUIDE.md E1). Adding `System/exit` to each `-main` is a recommended code change. | Running them by hand must not hang. |
 
 ---
 
 ## 6. Decisions
 
 ### D1. Two services and one datastore, no extra infrastructure
-Chosen: `ssr`, `backend`, one transactor. No queue, cache server, search engine or session store. Requirement for the second server: standards "Deployment topology" (independent scaling and caching). Rejected: Redis for sessions and limits (an extra process and cost; Datomic holds them with `noHistory`); a message queue for email and images (the outbox plus in-request image work is enough at tens of orders a day); Elasticsearch (a few hundred products).
+Chosen: `ssr`, `backend`, one transactor. No queue, cache server, search engine or session store. Requirement for the second server: standards "Deployment topology" (independent scaling and caching). Rejected: Redis for sessions and limits (an extra process and cost; Datomic holds them with `noHistory`); a message queue for email and images (the outbox plus in-request image work is enough at tens of orders a day); Elasticsearch (a few hundred products). The `::jobs` scheduled pool and the staging mail sink are not extra services: the first is a thread in the backend, the second exists only on staging.
 
 ### D2. Frontend server runtime, origin routing and CDN caching
 **Frontend server runtime: a small JVM Clojure service** (Pedestal 0.8 + `replicant.string` + Reitit data matching), owned by frontend-cljs.
-- Why: it renders the same `.cljc` views the browser uses, it is the one runtime the project already needs (the backend is a JVM), tooling is one `clojure` command, the dependencies are all on the required list, and the JDK's own HTTP client covers the API calls. Cost: about 0.4 to 0.5 GB of RAM per instance.
+- Why: it renders the same `.cljc` views the browser uses, it is the one runtime the project already needs (the backend is a JVM), tooling is one `clojure` command, the dependencies are all on the required list, and the JDK's own HTTP client covers the API calls. Cost: about 0.4 to 0.5 GB of RAM per instance at the design heap; measured about 170 MiB peak RSS at a 192m heap under load (D3).
 - Rejected: Node SSR from the ClojureScript build (second runtime on the server; a Node process is cheaper in RAM, so this is the fallback if memory ever binds; the views are shared code either way); a static prerender at build time (product pages change daily and prices and stock must be current); a headless-browser prerender service (extra service and cost); client-only rendering with tags set after load (fails the SEO rule in the first HTML); Datomic access from the frontend server (forbidden by the standards, and it would make the contract meaningless).
 - Standards check: Pedestal is listed for "basic services"; Datomic is not used here. Confirmed by the owner (Q10): the frontend server is separate from the backend service, serves the ClojureScript/Replicant app and renders public pages.
 
@@ -323,7 +370,7 @@ Chosen: `ssr`, `backend`, one transactor. No queue, cache server, search engine 
 - The proxy is also the load balancer for both server pools: a second instance is one more upstream with a health check. Which proxy is a deployment choice.
 
 **CDN caching, using api-contract.md section 1.5 and design-spec.md section 0.**
-The application states its caching through headers; the CDN only honours them. What the CDN must do is in section 8: honour origin `Cache-Control` (including `s-maxage`, `stale-while-revalidate`, `stale-if-error`, `no-store`), bypass the cache for `/api/admin`, `/api/auth`, `/admin` and any request carrying a `zt_session` cookie, and use no hardcoded edge TTL. Because every origin response carries an explicit `Cache-Control` (and `no-store` on private or error responses), the origin stays in charge.
+The application states its caching through headers; the CDN only honours them. What the CDN must do is in section 8: honour origin `Cache-Control` (including `s-maxage`, `stale-while-revalidate`, `stale-if-error`, `no-store`), bypass the cache for `/api/admin`, `/api/auth`, `/admin` and any request carrying a `zt_session` cookie, and use no hardcoded edge TTL. Because every origin response carries an explicit `Cache-Control` (and `no-store` on private or error responses), the origin stays in charge. Measured (deploy/DECISIONS.md, D-5, 26 October 2026): with the two cache rules in place, Cloudflare Free honours the short `s-maxage` values (largest Age 54 s on /shop, 21 s on /api/products), so the 90-second staleness rule (Q6) holds at the edge; private paths and session requests are never cached.
 
 | Response | Sent by | Cache-Control |
 |---|---|---|
@@ -342,17 +389,20 @@ Added value: `stale-if-error` lets the CDN keep serving catalogue pages for a da
 Page staleness (Q6, owner decision): catalogue pages may be at most about 90 seconds old (`s-maxage=60, stale-while-revalidate=30`), matching user-journeys.md and api-contract.md section 1.5; design-spec.md section 0 is updated to match. The lifetimes stay configuration (`PAGE_CACHE_*`). `ssr` fetches from the backend internally, not through the CDN, so what is cached is current as of the render.
 
 ### D3. Runtime footprint and Datomic layout
-The application is designed so that everything can run on one small server at launch and within the 15 USD ceiling. Which server, provider and plan is a deployment decision (section 8).
+The application is designed so that everything can run on one small server at launch and within the 15 USD ceiling. Which server, provider and plan is a deployment decision (section 8). As decided so far (deploy/DECISIONS.md, 26 October 2026): a 4 GB, 2 vCPU host runs **staging only**; production is decided at go-live and gets its own server. The "full" layout below is the design target for a production host; the "small" layout is the measured staging adjustment, recorded here as D3 allows.
 
 **Memory budget per process** (targets the code must fit; deployment-engineer measures and may adjust):
-| Process | Heap (`-Xmx`) | Expected RSS | Notes |
-|---|---|---|---|
-| Datomic transactor | 1024m | ~1.3 GB | `memory-index-max` 256m, `object-cache-max` 128m; minimum heap not verified, measure |
-| `backend` | 768m | ~1.1 GB | `-Ddatomic.objectCacheMax=256m`; libvips jobs add up to ~0.3 GB |
-| `ssr` | 256m | ~0.5 GB | |
-| `backend` staging (if co-located) | 512m | ~0.8 GB | database `zandy-staging` on the same transactor |
-| `ssr` staging (if co-located) | 192m | ~0.4 GB | |
-Production alone is about 2.9 GB RSS plus about 0.5 GB for the OS and edge proxy; with a co-located staging set, about 5.3 GB in total. Suggested flags: `-XX:+UseSerialGC` for the two small services, `-Xss512k`, `-XX:MaxMetaspaceSize=192m`.
+| Process | Full layout `-Xmx` | Expected RSS (design) | Small layout (staging-only host) | Notes |
+|---|---|---|---|---|
+| Datomic transactor | 1024m | ~1.3 GB | **512m**, `memory-index-threshold` 16m, `memory-index-max` 128m, `object-cache-max` 64m; container limit 1152m | Design: `memory-index-max` 256m, `object-cache-max` 128m. A real transactor took the full schema plus 144,000 entities (about 90 MB) without errors on the small layout. |
+| `backend` | 768m | ~1.1 GB | 512m (staging backend) | `-Ddatomic.objectCacheMax=256m` at the full layout; libvips jobs add up to ~0.3 GB. |
+| `ssr` | 256m | ~0.5 GB | 192m (staging ssr) | |
+| local mail sink (staging only) | n/a | n/a | 64 MB container limit | Small non-JVM process; no published port. |
+The design's co-located-staging rows (backend 512m, ssr 192m on the production transactor) are the same numbers the small layout now uses, but on its own host. Production alone at the full layout is about 2.9 GB RSS plus about 0.5 GB for the OS and edge proxy.
+
+**As measured on the staging host** (2 vCPU, 3814 MB, no swap used, nothing OOM-killed): small-layout heaps total 1216 MB (512 + 512 + 192), container limits total 2756 MB. Burst test (four uploads of 20 pictures of 4.8 MB, then 100 orders in 30 s, against a twin backend with the staging limits and a throw-away database): peaks transactor 735 MiB, backend 514 MiB, `ssr` 172 MiB, proxy 21 MiB, sink 16 MiB; peak sum 1425 MiB; lowest host memory available 1668 MiB. After the bursts the transactor idles at about 800 MiB (it keeps what it mapped; limit 1152 MiB). Decision rule used by deployment-engineer: peak total under 2.6 GB and more than 1.2 GB free. Production on a 4 GB host would add roughly 250 MB to the backend (full-layout heap), so the rule looks met, with the transactor as the item to watch. This is not a decision; production sizing is made at go-live from a re-measurement on the real host (check D-2).
+
+Suggested flags: `-XX:+UseSerialGC` for the two small services, `-Xss512k` (already in the `:run` alias), `-XX:MaxMetaspaceSize=192m`. On a host with 2 vCPU the transactor additionally needs `-XX:ActiveProcessorCount` raised (8 worked, 4 and 1 did not): Datomic 1.0.7745's health endpoint otherwise fails with "Insufficient configured threads: required=3 < max=3" because its thread pool is sized from the processor count. The Datomic command-line tools (`backup-db`, `restore-db`) hard-code `-Xms1g`, so deployment calls them with explicit small heaps (`-Xms64m -Xmx384m`).
 
 **Scaling order** (what the design allows, in order of cost):
 1. CDN cache hit rate (lifetimes and rules). The biggest lever because most traffic is read-only.
@@ -361,8 +411,8 @@ Production alone is about 2.9 GB RSS plus about 0.5 GB for the OS and edge proxy
 4. A second `backend` instance. On the same host no change is needed (shared `MEDIA_DIR`). On another host the transactor must listen on a reachable address (`host`/`alt-host`) behind a firewall allowing only backend hosts on ports 4334 and 4335, and `MediaStore` must switch to the `s3` implementation (PE5).
 5. Beyond that: Datomic on a different storage and a standby transactor.
 
-**Datomic layout:** one transactor with dev storage (accepted for launch by the owner), databases `zandy` and, if staging is co-located, `zandy-staging`; each backend instance is a peer. Writes all go through the one transactor, which is also what makes `place-order` atomic across instances; adding backend instances scales reads only, and each peer needs about 1 GB of RAM. Dev storage on one machine is a single point of failure and Datomic documents it as not recommended for production. Required mitigation (section 8): nightly `bin/datomic backup-db`, an off-site copy of the backup and of `MEDIA_DIR`, and a tested restore. Retention: 7 daily and 4 weekly sets.
-What I checked: Datomic Pro is free of licence fees and Apache 2.0 since April 2023; remote peers on dev storage need `storage-access=remote` with two passwords and connect with `datomic:dev://host:4334/db?password=...`; many peers may connect; one transactor is active, and a standby needs non-dev storage.
+**Datomic layout:** one transactor with dev storage (accepted for launch by the owner), database `zandy` for production and `zandy-staging` for staging; each backend instance is a peer. Writes all go through the one transactor, which is also what makes `place-order` atomic across instances; adding backend instances scales reads only, and each peer needs about 1 GB of RAM at the full layout. Dev storage on one machine is a single point of failure and Datomic documents it as not recommended for production. Required mitigation (section 8): nightly `bin/datomic backup-db`, an off-site copy of the backup and of `MEDIA_DIR`, and a tested restore. Retention: 7 daily and 4 weekly sets. Because production and staging are on separate hosts, each host has its own transactor and the two never share a database; this supersedes the earlier co-located `zandy-staging` plan.
+What I checked: Datomic Pro is free of licence fees and Apache 2.0 since April 2023; remote peers on dev storage need `storage-access=remote` with two passwords and connect with `datomic:dev://host:4334/db?password=...`; many peers may connect; one transactor is active, and a standby needs non-dev storage. Datomic refuses to restore a backup into storage that already holds that database, even under another name (`:restore/collision`); the restore test therefore uses a second, throw-away transactor (section 8).
 
 Rejected: Datomic Local (Client API only, tests would not match production, directory-copy backups); Datomic Pro on PostgreSQL storage (a second database process and memory, and against the spirit of "no SQL for application data").
 
@@ -371,13 +421,13 @@ Sessions, rate limits, idempotency keys, stock, outbox claims and policies are i
 Rejected: in-memory rate limits (multiply by instance count, reset on restart); signed stateless cookies (cannot revoke); sticky sessions at the proxy (would hide state bugs, and the owner asked for stateless).
 
 ### D5. Image resizing with the libvips CLI
-Unchanged from the earlier design: `vipsthumbnail` and `vipsheader` from `platform.media` (libvips is actively maintained; it streams, so memory stays low; the exact WebP strip option is tested in B17). Rejected: JVM libraries that are archived, native-only for x86 or unproven (`webp-imageio`, `webp4j`), and Thumbnailator (no WebP writer). Installed as the OS package in `Dockerfile.backend`.
+Unchanged from the earlier design: `vipsthumbnail` and `vipsheader` from `platform.media` (libvips is actively maintained; it streams, so memory stays low; the WebP quality and strip option `[Q=80,strip]` is tested in B17). Rejected: JVM libraries that are archived, native-only for x86 or unproven (`webp-imageio`, `webp4j`), and Thumbnailator (no WebP writer). Installed as the OS package in `Dockerfile.backend`.
 
 ### D6. Backend routing: Pedestal's own router (owner decision)
 The owner waived Reitit on the backend: the backend uses Pedestal 0.8's own router (Sawtooth, the default), which removes the Reitit-Pedestal integration risk and one dependency.
 1. Each slice's `routes.clj` defines routes as plain data (method, path, name, `:access`, Malli `:parameters`, `:idempotent?`, cache policy, handler). `platform.http/route-table` returns this normalised table and turns it into Pedestal table routes. All fitness checks (N1, N2, B9, R2) read that table.
-2. Request validation and coercion are done by a small Malli interceptor in `platform.http`, driven by the route data. JSON via muuntaja/jsonista (D11).
-3. 404 and 405 are produced by `platform.errors` in the standard error shape.
+2. Request validation, JSON coercion, multipart parsing and idempotency are hand-written wrappers in `platform.http`, composed per route inside one Pedestal interceptor (`route-interceptor`) and driven by the route data; JSON is jsonista through `platform.json` (DA1, D11). They are not separate Pedestal interceptors and not muuntaja.
+3. 404 and 405 are produced by `platform.errors` in the standard error shape (405 carries `Allow`).
 4. The contract's route rule (no static sibling beside a `{param}` route) stays: Sawtooth would tolerate such siblings and prefers literal paths, but the rule costs nothing and keeps the API predictable.
 5. No backend spike is needed for routing. The backend's first task is the Datomic migrations plus the `place-order` transaction with its concurrency test (B24).
 Frontend: `shared.routes` stays Reitit data (`reitit-core`, matching only, no Pedestal integration), used by `ssr.http` and the browser router, as engineering-standards.md now states.
@@ -391,6 +441,7 @@ Limits to accept:
 - Deliverability: Gmail signs mail it sends with its own domain keys, so mail from `@gmail.com` is authenticated, but it shows the personal address, customer receipts may land in spam, and Google may block the first login from a new server IP or end the app password if the Google password changes (the owner then has to approve the sign-in or create a new app password).
 - An alert sent to the sender's own mailbox still arrives in the inbox; the owner can add a Gmail filter on the subject prefix `[Zandy Touch]`.
 - When zandytouch.com exists, a transactional provider with SPF/DKIM on the domain can replace Gmail by changing `SMTP_*` and `OWNER_EMAIL` only (the protocol hides it).
+- Staging, until the app password exists (owner, 26 October 2026): `SMTP_HOST` points at a local mail sink that accepts any password, so no real mail leaves staging and every message can be read from the sink's log. The sink is a staging tool only; production uses Gmail. The development `LogMailer` logs only the recipient count and subject (CODE-GUIDE.md E3).
 Rejected: sending directly from the server (poor deliverability); a vendor HTTP API (lock-in); a broker.
 
 ### D8. `error.details` extension
@@ -400,20 +451,22 @@ Accepted, additive, limited to `validationFailed`, `cartOutdated`, `agreementVer
 Standards suggest `src/features/<slice>/`. Backend slices are `src/backend/zandy/features/<slice>/`; the frontend server is a separate project `ssr/`; browser code is `src/frontend`; shared views are `src/shared`. Reason: two builders, three runtime targets and disjoint trees (PE1).
 
 ### D10. Release and rollback
-Each server is built into its own image. Backend deploy: run `clojure -M:migrate` against the target database, then restart instances one at a time. `ssr` deploy: add the new static files to `STATIC_DIR`, then restart instances one at a time. Migrations are additive, so the previous backend image still works against the new schema for one release, which gives a rollback path.
+Each server is built into its own image. Backend deploy: run `clojure -M:migrate` against the target database, then restart instances one at a time. `ssr` deploy: add the new static files to `STATIC_DIR`, then restart instances one at a time. Migrations are additive, so the previous backend image still works against the new schema for one release, which gives a rollback path (this held for migration 0011: staging kept the previous release for rollback). A production release is built from a plain commit id; a dirty working tree is accepted only on staging.
 
 ### D11. Extra libraries (policy: named, one line each; no approval list)
-Required libraries are used for their stated purpose: Replicant (views and string rendering), Pedestal (both servers), Reitit (frontend only: shared page route table, SSR matching and client navigation; the backend uses Pedestal's router, D6), Integrant, Aero, Malli, Datomic Pro peer, Portfolio, shadow-cljs, Cognitect test-runner, babashka. Additional:
+Required libraries are used for their stated purpose: Replicant (views and string rendering), Pedestal (both servers), Reitit (frontend only: shared page route table, SSR matching and client navigation; the backend uses Pedestal's router, D6), Integrant, Aero, Malli, Datomic Pro peer, Portfolio, shadow-cljs, Cognitect test-runner, babashka. Additional, as built (DA1):
 | Library | Why |
 |---|---|
-| `metosin/muuntaja` + `jsonista` | JSON encoding and decoding (the `ssr` API client also uses `jsonista`). |
+| `metosin/jsonista` | JSON encoding and decoding in `platform.json` (the `ssr` API client also uses it). Replaces the planned `muuntaja`; the key and instant rules are a few lines in `platform.json`. |
+| `org.clojure/data.csv` | CSV parsing for the product import and CSV writing for the subscriber export and import template. |
+| `ring/ring-core` | Multipart request parsing in `platform.http` (`ring.middleware.multipart-params`). Used directly but today only a transitive dependency of Pedestal; to be declared in the root `deps.edn` (open item O1, H4). |
 | `com.password4j/password4j` | Argon2id password hashing on the JVM. |
 | `org.eclipse.angus/angus-mail` | SMTP sending (Jakarta Mail implementation). |
-| `com.brunobonacci/mulog` | Structured events as data with JSON output (backend-clojure confirms the JSON publisher or writes a short one with jsonista). |
-| `ch.qos.logback/logback-classic` | SLF4J backend so Pedestal and Datomic logs are quiet and structured. |
+| `ch.qos.logback/logback-classic` | SLF4J backend (backend) so Pedestal and Datomic logs are quiet; the application's own structured events come from the hand-written `platform.log`. Replaces the planned `mulog`. |
+| `org.slf4j/slf4j-nop` | Silences SLF4J in `ssr`. |
 | `java.net.http.HttpClient` (JDK) | The `ssr` API client; no library. |
 | libvips CLI (OS package) | Image variants, installed in the backend image. |
-frontend-cljs expects to need no further libraries and names any it adds.
+Not used: `muuntaja` and `mulog` (listed in the original design). frontend-cljs expects to need no further libraries and names any it adds.
 
 ### D12. Seed data and images
 Seed lives in the backend (owner decision 7): `resources/seed/**`, loaded by `clojure -M:seed` (3.4), images and manifest under `resources/seed/images/`. Rejected: a database migration for seed products (they are sample data, to be archived, not schema); pulling images at run time from any photo service (the backend definition and visual-guide.md forbid it); hotlinking.
@@ -422,16 +475,16 @@ Seed lives in the backend (owner decision 7): `resources/seed/**`, loaded by `cl
 
 ## 7. Fitness checks
 
-Conventions: run from the project root. Tools assumed on the machine: `rg` (ripgrep), `curl`, `clojure`, `bb`, `clj-kondo`, `docker` (for images). qa confirms with `command -v` first. "No output" means a pass. Backend tests: `clojure -M:test` at the root (one namespace: `clojure -M:test -n <ns>`). `ssr` tests: `cd ssr && clojure -M:test`. Local run for HTTP checks: backend `clojure -M:run` (dev profile, in-memory Datomic, seeded) on 8080, then `cd ssr && API_BASE_URL=http://127.0.0.1:8080 clojure -M:run` on 8081. Items that need something not yet written are marked **(to be built by owner)** with a path; qa runs them and does not author them.
+Conventions: run from the project root. Tools assumed on the machine: `rg` (ripgrep), `curl`, `clojure`, `bb`, `clj-kondo`, `docker` (for images). qa confirms with `command -v` first. "No output" means a pass. Backend tests: `clojure -M:test` at the root (one namespace: `clojure -M:test -n <ns>`). `ssr` tests: `cd ssr && clojure -M:test` (also runs `test/shared` and the JVM help build test). Browser tests: the shadow-cljs `:test` build. Local run for HTTP checks: backend `clojure -M:run` (dev profile, in-memory Datomic, seeded) on 8080, then `cd ssr && API_BASE_URL=http://127.0.0.1:8080 clojure -M:run` on 8081. Items that need something not yet written are marked **(to be built by owner)** with a path; qa runs them and does not author them. All test namespaces below exist as listed.
 
 ### 7.1 Non-negotiable rules
 | # | Rule | Check | Pass |
 |---|---|---|---|
 | N1 | Server-side validation at the boundary | `clojure -M:test -n zandy.architecture.routes-test` **(backend-clojure, `test/backend/zandy/architecture/routes_test.clj`)**: walks `platform.http/route-table`; fails if any `/api` route with body, query or path parameters lacks Malli `:parameters` (or an explicit `:no-input? true`); posts an invalid body to every mutating route and asserts 422 `validationFailed` or 400, never 500. | 0 failures |
 | N2 | Server-side authorization | Same namespace: every route has `:access`; the `:public` set equals the allowlist derived from api-contract.md sections 2 to 6; every `:staff`/`:owner` route returns 401 without a cookie; an `:owner` route returns 403 for a support session; a staff mutation without `X-CSRF-Token` returns 403 `csrfInvalid`. | 0 failures |
-| N3 | No hardcoded secrets | (a) `rg -n -i '(secret\|password\|api[-_]?key\|token\|smtp[-_]?pass\|uri)' resources/config.edn ssr/resources \| rg -v '#env'` (b) `rg -n --pcre2 -i '(secret\|password\|apikey\|api-key\|token)\W{1,4}"[A-Za-z0-9+/_=.-]{12,}"' src ssr resources dev scripts deploy Dockerfile.backend Dockerfile.ssr` (c) `git ls-files \| rg '(^\|/)\.env\|\.pem$\|\.key$'` | All three: no output |
+| N3 | No hardcoded secrets | (a) `rg -n -i '(secret\|password\|api[-_]?key\|token\|smtp[-_]?pass\|uri)' resources/config.edn ssr/resources \| rg -v '#env'` (b) `rg -n --pcre2 -i '(secret\|password\|apikey\|api-key\|token)\W{1,4}"[A-Za-z0-9+/_=.-]{12,}"' src ssr resources dev scripts deploy Dockerfile.backend Dockerfile.ssr` (c) `git ls-files \| rg '(^\|/)\.env\|\.pem$\|\.key$'` | All three: no output. Note: the staging mail sink's dummy password (`mail-sink-accepts-any-password`) is not a secret by design; if (b) reports it in `deploy/`, the finding is recorded and accepted, not a failure of the rule. |
 | N4 | Versioned migrations | (a) `rg -n ':db/(ident\|valueType\|cardinality\|unique)' src ssr/src dev test scripts` no output (schema only in `resources/migrations`). (b) `git log --diff-filter=M --name-only --format= -- resources/migrations` no output after the first release. (c) `clojure -M:test -n zandy.platform.migrations-test` **(backend-clojure)**: applies all migrations to `datomic:mem`, ledger lists every file, re-run is a no-op, a changed checksum aborts, a numbering gap aborts, and booting with a stale ledger refuses to start. | (a), (b) no output; (c) 0 failures |
-| N5 | Idempotent mutations | `clojure -M:test -n zandy.architecture.idempotency-test` **(backend-clojure)**: for every endpoint in api-contract.md 1.6: missing key gives 400 `missingIdempotencyKey`; same key and body twice creates one record and replays with `Idempotent-Replayed: true`; same key and a different body gives 409 `idempotencyKeyReused`; two concurrent identical requests create one record. For `POST /api/orders`: one order, one acceptance, one set of stock movements, one outbox entry per recipient. | 0 failures |
+| N5 | Idempotent mutations | `clojure -M:test -n zandy.architecture.idempotency-test` **(backend-clojure)**: for every endpoint in api-contract.md 1.6: missing key gives 400 `missingIdempotencyKey`; same key and body twice creates one record and replays the stored response with `Idempotent-Replayed: true`; same key and a different body gives 409 `idempotencyKeyReused`; two concurrent identical requests create one record; one-time secrets are not replayed. For `POST /api/orders`: one order, one acceptance, one set of stock movements, one outbox entry per recipient. The crash window of section 5 is a documented limit and has no test. | 0 failures |
 | N6 | No micro-frontends | (a) `rg -n '^\s+:[a-z-]+\s+\{:target' shadow-cljs.edn` lists only `:app`, `:portfolio`, `:test` (the frontend server is JVM code, not a second shadow build). (b) `:app` has exactly one module: `bb -e '(println (count (:modules (:app (:builds (clojure.edn/read-string (slurp "shadow-cljs.edn")))))))'` prints 1. The `:portfolio` build has its own single `:modules` entry (it is not part of the deployed bundle), so `rg -c ':modules' shadow-cljs.edn` may be 2 (`:app` and `:portfolio`) but not more. (c) after `npx shadow-cljs release app`, `ls target/static/js \| rg -c '^main\.'` is 1. (d) `rg -n -i 'module-federation\|single-spa\|single_spa\|importmap' package.json shadow-cljs.edn src ssr/src` no output. | as stated |
 
 ### 7.2 Boundaries and design rules
@@ -439,16 +492,16 @@ Conventions: run from the project root. Tools assumed on the machine: `rg` (ripg
 |---|---|---|---|
 | B1 | Banned libraries | `clj-kondo --lint src/backend test/backend dev` (root config) and `cd ssr && clj-kondo --lint src ../src/shared ../src/frontend test`; `rg -n -i '(reagent\|re-frame\|"react"\|rum/rum\|compojure\|ring-jetty\|ring/ring-jetty\|mount/mount\|environ\|plumatic\|prismatic\|next\.jdbc\|java\.jdbc\|honeysql\|postgres\|mysql\|sqlite)' deps.edn ssr/deps.edn shadow-cljs.edn package.json` | kondo exits 0; rg no output |
 | B2 | Slice boundaries, no layer folders | `bb scripts/check/backend_deps.clj slices` **(backend-clojure)**: fails if slice A requires `zandy.features.B.<anything but api>`; `find src ssr/src -type d \( -name controllers -o -name services -o -name models \)` | exit 0; find prints nothing |
-| B3 | Allowed edges and no cycles | `bb scripts/check/backend_deps.clj graph` **(backend-clojure)** compares backend namespace edges to the list in 2.2 and checks acyclic. `bb scripts/check/frontend_deps.clj graph` **(frontend-cljs, `scripts/check/frontend_deps.clj`)** does the same for `ssr`, `src/shared`, `src/frontend` against 2.3 and 2.4, and fails if `src/shared` requires `zandy.frontend`, `zandy.ssr`, `zandy.backend`, `datomic`, `io.pedestal`. | exit 0 both |
+| B3 | Allowed edges and no cycles | `bb scripts/check/backend_deps.clj graph` **(backend-clojure)** compares backend namespace edges to the list in 2.2 and checks acyclic. `bb scripts/check/frontend_deps.clj graph` **(frontend-cljs, `scripts/check/frontend_deps.clj`)** does the same for `ssr`, `src/shared`, `src/frontend` against 2.3 and 2.4, fails on a namespace with no table entry, and fails if `src/shared` requires `zandy.frontend`, `zandy.ssr`, `zandy.backend`, `datomic`, `io.pedestal` or uses `js/`. The edges that are invisible to the graph (`ctx :user-summaries`, route data) are covered by tests, not by this check. | exit 0 both |
 | B3b | Backend serves no HTML and ssr never touches the database | `rg -n -i 'zandy\.(shared\|ssr\|frontend)\|replicant\|text/html' src/backend deps.edn` no output. `rg -n -i 'datomic' ssr src/shared src/frontend --glob '!**/*.md'` no output. | no output |
-| B4 | Write ownership of entities | `bb scripts/check/backend_deps.clj attrs` **(backend-clojure)**: for each attribute namespace in 3.2, the keyword may appear in `src/backend` only under the owning slice or platform component. The two db-function files `resources/migrations/dbfns/place_order.clj` and `change_order_status.clj` are the only allowlisted multi-entity writers. | exit 0 |
+| B4 | Write ownership of entities | `bb scripts/check/backend_deps.clj attrs` **(backend-clojure)**: for each attribute namespace in 3.2, the keyword may appear in `src/backend` only under the owning slice or platform component (policy attributes: `platform.migrations` is allowed as a special case; the script's table still names `policies` as the nominal owner). The scan is textual, so documentation in another component must not name an attribute it does not own. The two db-function files `resources/migrations/dbfns/place_order.clj` and `change_order_status.clj` are the only allowlisted multi-entity writers. | exit 0 |
 | B5 | Pure core | `rg -n '(datomic\.api\|clojure\.java\.(io\|shell)\|zandy\.platform\.(http\|mailer\|media\|datomic)\|java\.net\|slurp\|spit)' src/backend --glob '**/logic.clj'` | no output |
 | B6 | Thin handlers | `rg -n 'datomic\.api' src/backend --glob '**/routes.clj'` | no output |
 | B7 | Single error constructor | `rg -n '(:status\s+[45][0-9]{2}\|response\s+[45][0-9]{2})' src/backend --glob '!**/platform/errors.clj'` | no output |
 | B8 | camelCase keys, ISO 8601 `Z` instants, error shape | `clojure -M:test -n zandy.contract-conformance-test` **(backend-clojure)**: runs every contract endpoint on in-memory Datomic and checks keys `^[a-z][A-Za-z0-9]*$`, timestamps under `*At`, `at`, `effectiveFrom` match `^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$`, and every error body matches `{error:{code, message, details?}}`. | 0 failures |
-| B9 | Route inventory equals the contract | `clojure -M:test -n zandy.contract-inventory-test` **(backend-clojure)**: compares `### METHOD /path` headings in api-contract.md with `route-table` (method, path with `{param}` normalised). | equal both ways |
-| B9b | Frontend calls only contract endpoints | `bb scripts/check/frontend_deps.clj api-calls` **(frontend-cljs)**: extracts every `/api/...` path literal from `src/frontend/**/api.cljs`, `ssr/src/**/api_client.clj` and `ssr/src/**/pages.clj`, and checks each matches a contract heading. | exit 0 |
-| B10 | Frontend never calls third parties or holds secrets | (a) `rg -n 'https?://' src/frontend src/shared ssr/src --glob '!**/scenes/**' \| rg -v 'schema\.org\|www\.w3\.org\|sitemaps\.org\|wa\.me'` no output (Portfolio scene fixtures under `scenes/` hold sample social URLs and are not reachable from the app bundle, as in B13). (b) `rg -l '(js/fetch\|XMLHttpRequest\|js/WebSocket)' src/frontend src/shared` prints only `src/frontend/zandy/frontend/api.cljs`. (c) `rg -l '(java\.net\.http\|clj-http\|hato)' ssr/src` prints only `ssr/src/zandy/ssr/api_client.clj`. (d) `rg -n -i '(api[-_]?key\|secret\|bearer )' src/frontend src/shared ssr/src` no output. (e) with `ssr` running: `curl -sI http://127.0.0.1:8081/ \| rg -i 'content-security-policy'` contains `connect-src 'self'`. | as stated |
+| B9 | Route inventory equals the contract | `clojure -M:test -n zandy.architecture.contract-inventory-test` **(backend-clojure, `test/backend/zandy/architecture/contract_inventory_test.clj`)**: compares `### METHOD /path` headings in api-contract.md with `route-table` (method, path with `{param}` normalised). | equal both ways |
+| B9b | Frontend calls only contract endpoints | `bb scripts/check/frontend_deps.clj api-calls` **(frontend-cljs)**: extracts every `/api/...` path literal from `src/shared`, `src/frontend` and `ssr/src` and checks each matches a contract heading. | exit 0 |
+| B10 | Frontend never calls third parties or holds secrets | (a) `rg -n 'https?://' src/frontend src/shared ssr/src --glob '!**/scenes/**' \| rg -v 'schema\.org\|www\.w3\.org\|sitemaps\.org\|wa\.me'` no output (Portfolio scene fixtures under `scenes/` hold sample social URLs and are not reachable from the app bundle, as in B13). The shop's social links come from `GET /api/site-info`, not from literals. (b) `rg -l '(js/fetch\|XMLHttpRequest\|js/WebSocket)' src/frontend src/shared` prints only `src/frontend/zandy/frontend/api.cljs`. (c) `rg -l '(java\.net\.http\|clj-http\|hato)' ssr/src` prints only `ssr/src/zandy/ssr/api_client.clj`. (d) `rg -n -i '(api[-_]?key\|secret\|bearer )' src/frontend src/shared ssr/src` no output. (e) with `ssr` running: `curl -sI http://127.0.0.1:8081/ \| rg -i 'content-security-policy'` contains `connect-src 'self'`. | as stated |
 | B11 | `src/shared` is JVM-safe and uses tokens | `rg -n 'js/' src/shared` no output; `cd ssr && clojure -M:test` runs `test/shared`; `rg -n '#[0-9a-fA-F]{3,8}\b' styles src/frontend src/shared` no output. | as stated |
 | B12 | Structured logging, no stray printing | `rg -n '\((println\|prn\|pr\|print\|printf\|tap>)\s' src/backend ssr/src`; `rg -n 'js/console\.(log\|debug)' src/frontend src/shared`; `clojure -M:test -n zandy.platform.log-test` **(backend-clojure)** and `cd ssr && clojure -M:test -n zandy.ssr.log-test` **(frontend-cljs)**: force a 500, assert one JSON line with request id and context, and that login and order logs contain no password or phone. | no output; 0 failures |
 | B13 | No environment-specific literals | `rg -n 'localhost\|127\.0\.0\.1\|zandytouch\.com' src ssr/src --glob '!**/scenes/**'` | no output |
@@ -456,62 +509,84 @@ Conventions: run from the project root. Tools assumed on the machine: `rg` (ripg
 | B15 | robots, staging and launch gate | With `SITE_INDEXABLE=false`: `curl -s .../robots.txt` equals `User-agent: *` / `Disallow: /`, responses carry `X-Robots-Tag: noindex`, sitemap empty. With `true` (policies approved): robots references the sitemap, `sitemap.xml` lists product URLs on `SITE_BASE_URL`. `cd ssr && clojure -M:test -n zandy.ssr.launch-gate-test` **(frontend-cljs)**: with a stub API returning a `placeholder` policy and `SITE_INDEXABLE=true`, startup fails; with all approved, startup succeeds. | as stated; 0 failures |
 | B16 | Static assets and fonts resolve | After the build: `curl -s -o /dev/null -w '%{http_code} %{content_type}\n' http://127.0.0.1:8081/static/assets/fonts/inter-latin-400.woff2` is `200 font/woff2`; the hashed tokens CSS, `/static/assets/logo/logo-horizontal.svg` and `/static/js/main.<hash>.js` (name from `asset-manifest.edn`) return 200. After `bb scripts/build/assets.clj` **(frontend-cljs)**: `git status --porcelain assets design-tokens.css` is empty. | 200s; clean status |
 | B17 | Image pipeline | `vipsthumbnail --version` and `vipsheader --version` succeed; `clojure -M:test -n zandy.platform.media-test` **(backend-clojure)**: a JPEG with GPS EXIF yields three WebP files at 480/800/1200 px (or the original width if smaller) with no `exif-` fields; a 6001 px file, a 5.1 MB file, a text file renamed `.jpg` and a 21-file request are rejected with the contract's codes. | 0 failures |
-| B18 | Client bundle budget (proposed target) | `gzip -c target/static/js/main.*.js \| wc -c` | at most 250000 |
+| B18 | Client bundle budget (proposed target) | `gzip -c target/static/js/main.*.js \| wc -c`. The bundle now carries the admin area and all help text (public, DA10); measure after each help or admin change. | at most 250000 |
 | B19 | Shared dependency versions agree | `bb scripts/check/frontend_deps.clj versions` **(frontend-cljs)**: versions of `no.cjohansen/replicant` and `metosin/reitit-core` equal in `ssr/deps.edn` and `shadow-cljs.edn`. | exit 0 |
-| B23 | Seed manifest complete | `bb scripts/check/seed_manifest.clj` **(backend-clojure)**: every file in `resources/seed/images/` has a `manifest.edn` entry with file, sku, alt, source URL, author, licence in {CC0, Public Domain}, date retrieved; every published seed SKU has at least one image (two for `SEED-SK-01`, `SEED-PF-01`); `SOURCES.md` lists the same files; no file is missing from disk. `clojure -M:test -n zandy.seed-test` **(backend-clojure)**: after the seed on `datomic:mem`, 22 published and 1 draft product, every SKU starts `SEED-`, each category has at least 3, one product has stock 0, one has stock at or below 5, opening stock is written as `initial` movements, seed photos are marked `seed?`. | exit 0; 0 failures |
+| B23 | Seed manifest complete | `bb scripts/check/seed_manifest.clj` **(backend-clojure)**: every file in `resources/seed/images/` has a `manifest.edn` entry with file, sku, alt, source URL, author, licence in {CC0, Public Domain}, date retrieved; every published seed SKU has at least one image (two for `SEED-SK-01`, `SEED-PF-01`); `SOURCES.md` lists the same files; no file is missing from disk. `clojure -M:test -n zandy.seed-test` **(backend-clojure)**: after the seed on `datomic:mem`, 22 published and 1 draft product, every SKU starts `SEED-`, each category has at least 3, one product has stock 0, one has stock at or below 5, opening stock is written as `initial` movements, seed photos are marked `seed?`. The licence claims are only as good as the manifest; qa or the owner spot-checks three source URLs. | exit 0; 0 failures |
 | B24 | Stock cannot oversell | `clojure -M:test -n zandy.orders.place-order-concurrency-test` **(backend-clojure)**: 20 concurrent orders for a product with stock 5 produce exactly 5 orders, stock 0, 15 `cartOutdated`, and stock movements that sum to the stock. | 0 failures |
-| B26 | Code documentation (engineering-standards.md "Code documentation") | Both lint configurations enable `:missing-docstring` at warning level. `clj-kondo --lint src/backend test/backend dev 2>&1 \| rg -c 'Missing docstring'` **(backend-clojure)** and `cd ssr && clj-kondo --lint src ../src/shared ../src/frontend 2>&1 \| rg -c 'Missing docstring'` **(frontend-cljs)**; every namespace under `src/` and `ssr/src` has a namespace docstring. | no output (0 missing) |
+| B25 | Browser start-up keeps the page intact (DA7; approved 26 October 2026) | In a real browser, on a public page served by `ssr`, after the bundle has loaded: exactly one `h1`, no duplicate `id` attribute in the document, and the scroll position did not change. Manual or scripted by qa; no script exists in the repository. Known accepted result (qa-report.md): when JavaScript arrives late, focus drops to the body and a half-typed footer field is erased. | one `h1`; no duplicate ids; same scroll position |
+| B26 | Code documentation (engineering-standards.md "Code documentation") | Both lint configurations enable `:missing-docstring` at warning level. `clj-kondo --lint src/backend test/backend dev 2>&1 \| rg -c 'Missing docstring'` **(backend-clojure)** and `cd ssr && clj-kondo --lint src ../src/shared ../src/frontend 2>&1 \| rg -c 'Missing docstring'` **(frontend-cljs)**; every namespace under `src/` and `ssr/src` has a namespace docstring. Whether a "why" comment exists where the reason is not obvious is a review judgement and has no mechanical check. | no output (0 missing) |
 
 ### 7.3 Topology, multi-instance and edge
 | # | Rule | Check | Pass |
 |---|---|---|---|
-| R2 | Cache headers match section 6 D2 and the contract | `scripts/ops/check-cache-headers.sh <base-url>` **(deployment-engineer, run on staging)**: requests each row of the D2 table and the api-contract.md 1.5 table, compares `Cache-Control`, and asserts that cacheable responses have no `Set-Cookie` and no `Vary: Cookie`, that private and error responses are `no-store`, and that a stopped backend yields an `ssr` 503 with `no-store`. | exit 0 |
+| R2 | Cache headers match section 6 D2 and the contract | `scripts/ops/check-cache-headers.sh <base-url>` **(deployment-engineer, run on staging)**: requests each row of the D2 table and the api-contract.md 1.5 table, compares `Cache-Control`, and asserts that cacheable responses have no `Set-Cookie` and no `Vary: Cookie`, that private and error responses are `no-store`, and that a stopped backend yields an `ssr` 503 with `no-store`. Through a CDN the script tolerates a missing `ETag` on uncached `no-cache` pages when the response proves it came through the CDN; direct to the origin it stays strict. | exit 0 |
 | R3 | Pedestal not downgraded; router recorded | `rg -n 'io.pedestal/[^ ]+ \{:mvn/version "0\.[0-7]\.' deps.edn ssr/deps.edn` no output; `clojure -M:test -n zandy.platform.http-test` **(backend-clojure)** passes with Pedestal's router (D6); `rg -n 'reitit' deps.edn src/backend` prints nothing. | no output; 0 failures |
 | R4 | No shared in-process state | `rg -n '^\(def(once)?\s+\S+\s+\(atom' src/backend ssr/src` no output; `rg -n '\(atom\b\|ConcurrentHashMap' src/backend/zandy/platform/rate_limit.clj src/backend/zandy/platform/idempotency.clj src/backend/zandy/features/accounts src/backend/zandy/features/notifications` no output. | no output |
 | R5 | Two instances of each server work together | `scripts/ops/two-instance-smoke.sh` **(deployment-engineer, run on staging)** starts two `backend` instances (8080, 8090) on one transactor and two `ssr` instances (8081, 8082) behind a local test proxy, then: logs in on A and reads `/api/auth/sessions/current` on B immediately; places an order on A with key K and replays on B (`Idempotent-Replayed: true`, one order); exhausts a login rate limit on A and sees 429 on B; checks exactly one send per outbox message with the log mailer; confirms both `ssr` instances return identical HTML for the same URL. | exit 0 |
-| R9 | Email configuration | `clojure -M:test -n zandy.platform.config-test` **(backend-clojure)**: the prod profile fails without `OWNER_EMAIL`, `SMTP_USER`, `SMTP_PASSWORD`; `From` equals `OWNER_EMAIL`; the daily cap is applied. `clojure -M:send-test-mail` (alias in root `deps.edn`, **backend-clojure**) sends one message to `OWNER_EMAIL`; qa runs it only when the owner has supplied the app password. | 0 failures; message received |
+| R9 | Email configuration | `clojure -M:test -n zandy.platform.config-test` **(backend-clojure)**: the prod profile fails without `OWNER_EMAIL`, `SMTP_USER`, `SMTP_PASSWORD`; `From` equals `OWNER_EMAIL`; the daily cap is applied. `clojure -M:send-test-mail` (alias in root `deps.edn`, **backend-clojure**) sends one message to `OWNER_EMAIL`; qa runs it only when the owner has supplied the app password. On staging with the mail sink the same command lands in the sink's log. | 0 failures; message received |
 
 ---
 
 ## 8. What deployment must provide
 
-This is the boundary between architecture and deployment. These are requirements on the deployment, not choices. deployment-engineer researches how to meet them, presents the options and lets the owner choose (provider, plan, domain, CDN, backup destination, payment method); see deployment-handover.md.
+This is the boundary between architecture and deployment. These are requirements on the deployment, not choices. deployment-engineer researches how to meet them, presents the options and lets the owner choose (provider, plan, domain, CDN, backup destination, payment method); the choices made are recorded in deploy/DECISIONS.md and the non-binding research in deployment-handover.md. Provider names, plans and prices stay in those files and in deploy/COSTS.md, not here.
 
 Requirements:
-1. **Processes:** `backend` x N, `ssr` x N, one Datomic transactor (dev storage), an edge proxy. JVM 21 or later. libvips CLI available to the backend.
-2. **Memory:** the per-process budget in D3. Total hosting at most 15 USD per month including VAT, domain (per year divided by 12) and storage.
-3. **One public origin** with path routing as in section 5; an internal address for `ssr` to reach the backend (`API_BASE_URL`); `X-Upstream` and `X-Client-Ip` headers set by the proxy as in section 5; HSTS.
-4. **CDN** that honours origin `Cache-Control` (including `s-maxage`, `stale-while-revalidate`, `stale-if-error`), bypasses the cache for `/api/admin`, `/api/auth`, `/admin` and requests with a `zt_session` cookie, and adds no hardcoded edge TTL.
-5. **Persistent disk** for `MEDIA_DIR` and Datomic dev storage.
-6. **Backups:** nightly Datomic `backup-db` and `MEDIA_DIR`, copied off the server, with a tested restore; 7 daily and 4 weekly sets.
-7. **Environments:** staging and production differ only in environment values (section 5, Configuration). Staging has `SITE_INDEXABLE=false` and its own database. Migrations run (`clojure -M:migrate`) before instances start (3.3).
-8. **Static files:** deployed to `STATIC_DIR` on every `ssr` host, keeping earlier releases' files for at least 14 days (4.2).
-9. **Secrets** only in the server environment: `SESSION_HMAC_SECRET`, `OWNER_INITIAL_PASSWORD`, `SMTP_PASSWORD` (Gmail app password), Datomic passwords.
+1. **Processes:** `backend` x N, `ssr` x N, one Datomic transactor (dev storage), an edge proxy. JVM 21 or later. libvips CLI available to the backend. Production must start the backend with the production entry point (`clojure -M -m zandy.platform.system` or the image command), not the `:run` alias, which bakes in the dev profile.
+2. **Memory:** the per-process budget in D3, as measured: on a 4 GB, 2 vCPU host the "small layout" (transactor `-Xmx512m` with `memory-index-threshold` 16m, `memory-index-max` 128m and `object-cache-max` 64m; backend 512m; `ssr` 192m; each container with a limit, summing to about 2.7 GB of limits and about 1.4 GB measured peak). Any other layout needs its own measurement and a recorded adjustment (check D-2). Total hosting at most 15 USD per month including VAT, domain (per year divided by 12) and storage.
+3. **One public origin** with path routing as in section 5; an internal address for `ssr` to reach the backend (`API_BASE_URL`); `X-Upstream` and `X-Client-Ip` headers set by the proxy as in section 5; HSTS. The internal listeners (the ones `ssr` and the health checks use to reach the backend) must drop the `Upgrade` and `HTTP2-Settings` request headers: the JDK HttpClient opens a plain HTTP/1.1 connection with an `h2c` upgrade request, and a proxy that forwards it makes the backend answer 400, so every page becomes "unavailable" (found on staging, 26 October 2026).
+4. **CDN** that honours origin `Cache-Control` (including `s-maxage`, `stale-while-revalidate`, `stale-if-error`), bypasses the cache for `/api/admin`, `/api/auth`, `/admin` and requests with a `zt_session` cookie, and adds no hardcoded edge TTL. It must not add its own browser lifetime to `robots.txt` or drop `ETag` from `no-cache` pages without the deployment recording it (it was observed doing both on staging). Whether the chosen CDN tier's minimum edge TTL exceeds `s-maxage=60` is to be measured on staging (open, check D-5).
+5. **Firewall:** from go-live, inbound web traffic (80/443) to the origin accepted only from the CDN's published address ranges, plus administrative access (SSH) from the operator; recommended by deployment-engineer and not yet applied on staging (RUNBOOK.md). Why: the rate-limit identity rule (section 5) trusts the CDN's client-IP header only when the connection comes from the CDN's ranges, and an origin open to the world can be reached around the cache and the CDN's protections. If the origin must also answer direct requests (for example a temporary hostname for testing), the proxy falls back to the TCP peer address for those requests, never to a header the client supplied.
+6. **Hosting layout:** staging and production are separate environments. At present a single small host runs staging only (its own transactor and `zandy-staging` database, backend, `ssr`, proxy and the mail sink); production runs on its own server, chosen at go-live (the same small layout if a measurement on that server shows it fits, otherwise the full layout of D3). The single-host layout (both environments on one larger host) remains valid for a larger server. Staging is not indexable (`SITE_INDEXABLE=false`).
+7. **Persistent disk** for `MEDIA_DIR` and Datomic dev storage.
+8. **Backups:** on the production host, nightly Datomic `backup-db` and `MEDIA_DIR`, copied off the server, with a tested restore; 7 daily and 4 weekly sets. A staging-only host holds sample data and no production data, so the nightly schedule is not enabled there; the whole mechanism (back up, archive, upload, restore, compare counts) is exercised once on staging to satisfy D-3 early, and the schedule is enabled on the server that runs production. The restore test restores into a separate, throw-away transactor with its own storage, never into the live transactor, because Datomic refuses to restore a backup into storage that already holds that database even under another name. The Datomic command-line tools must be called with explicit small heaps on small hosts (D3).
+9. **Transactor on small hosts:** on a host with 2 vCPU the transactor needs `-XX:ActiveProcessorCount` set above the real count (8 worked; 4 and 1 failed the health endpoint) until a Datomic release sizes its thread pool differently (D3).
+10. **Environments:** staging and production differ only in environment values (section 5, Configuration). Staging has `SITE_INDEXABLE=false` and its own database. Migrations run (`clojure -M:migrate`) before instances start (3.3). Staging mail may go to a local mail sink instead of Gmail until the app password exists (D7); the sink must accept any password, log decoded messages readable by the operator only, and publish no port. Production uses real SMTP and must fail to start without SMTP credentials (R9).
+11. **Static files:** deployed to `STATIC_DIR` on every `ssr` host, keeping earlier releases' files for at least 14 days (4.2).
+12. **Release identity:** a production release is built from a plain commit id (no uncommitted changes); a staging release may carry a marker for uncommitted state. The previous release stays available for rollback (D10).
+13. **Secrets** only in the server environment: `SESSION_HMAC_SECRET`, `OWNER_INITIAL_PASSWORD`, `SMTP_PASSWORD` (Gmail app password; on staging with the sink a dummy value that is not a secret), Datomic passwords, the off-site backup credential.
 
 Acceptance checks that deployment-engineer writes and runs (moved here from section 7 because they test the deployment, not the code):
 | # | Check | Pass |
 |---|---|---|
 | D-1 | Path routing: `scripts/ops/check-routing.sh <base-url>`: `/api/site-info` and `/media/<known>-thumb.webp` return `X-Upstream: backend`; `/`, `/shop`, `/static/design-tokens.<hash>.css`, `/robots.txt`, `/healthz` return `X-Upstream: ssr`; `/api/healthz` returns 200. | exit 0 |
-| D-2 | Memory plan: `bb scripts/ops/sum_xmx.clj` sums every `-Xmx` in `deploy/**` and the Dockerfiles and compares with D3. | within D3 plus any measured, recorded adjustment |
-| D-3 | Backups restore: `scripts/ops/backup.sh` and `scripts/ops/restore-test.sh` restore into a scratch database name and compare order, product and media counts with live. | counts equal |
+| D-2 | Memory plan: `bb scripts/ops/sum_xmx.clj` sums every `-Xmx` in `deploy/**` and the Dockerfiles and compares with D3 (the layout in use); `scripts/ops/burst-test.sh` measures peaks on the real host. | within D3 plus any measured, recorded adjustment (small layout: heaps 1216 MB, peak sum about 1.4 GB, rule: peak total under 2.6 GB and more than 1.2 GB free) |
+| D-3 | Backups restore: `scripts/ops/backup.sh` and `scripts/ops/restore-test.sh` restore into a separate throw-away transactor and compare order, product and media counts with live (on a staging-only host the `--staging` variants, once). | counts equal |
 | D-4 | Cost ceiling: `deploy/COSTS.md` lists every recurring item with price, term, date checked and source URL, plus the domain per year divided by 12. | total at most 15 USD |
-| D-5 | CDN honours lifetimes: `scripts/ops/check-edge-cache.sh <https-base-url>`: second fetch of `/shop` and `/api/products` is a cache hit with `Age` below the stated lifetime; admin, auth and cookie requests bypass. | exit 0, or the measured minimum TTL reported |
+| D-5 | CDN honours lifetimes: `scripts/ops/check-edge-cache.sh <https-base-url>`: second fetch of `/shop` and `/api/products` is a cache hit with `Age` below the stated lifetime; admin, auth and cookie requests bypass. | exit 0, or the measured minimum TTL reported. Status: bypass checks pass; cache hits not yet seen (8 of 10 passed), edge TTL not measured. |
 | D-6 | Previous bundle survives a deploy: `scripts/ops/check-static-retention.sh`. | 200 |
 | D-7 | Environment values: staging `SITE_INDEXABLE=false` and `DATOMIC_URI` naming `zandy-staging`; production names `zandy`; `SITE_BASE_URL` set per environment. | as stated |
 | D-8 | Two instances: check R5 and R2 from section 7, run on staging. | exit 0 |
+| D-9 | (proposed by the architect, deployment-engineer to write) Internal listeners: a request to the backend through the internal `ssr` path carrying `Upgrade: h2c` and `HTTP2-Settings` returns the normal response, not 400; the upstream sees neither header. | exit 0 |
+| D-10 | (proposed by the architect, deployment-engineer to write) Firewall: from a machine outside the CDN's ranges, a direct request to the origin on 80 and 443 is refused or times out; a request through the CDN succeeds; SSH works from the operator. Run after the firewall is applied. | as stated |
+
+---
 
 ## 9. Open questions for the owner (application)
 
-Deployment choices (provider, plan, domain, CDN account, backup destination, payment method, staging placement) are asked at the deployment stage; see deployment-handover.md.
+Deployment choices (provider, plan, domain, CDN account, backup destination, payment method, staging placement) are asked at the deployment stage and answered in deploy/DECISIONS.md (owner, 26 October 2026); production hosting is still open there.
 
-All application questions are answered (owner, 25 October 2026):
+Resolved (owner, 25 October 2026):
 - Q3 Gmail as sender: accepted, and the address may be shown publicly.
 - Q5 Photos stay on the server disk for launch (PE5 accepted); originals are deleted after the variants exist.
-- Q6 About 90 seconds for catalogue pages; `stale-if-error` of a day approved.
+- Q6 About 90 seconds for catalogue pages; `stale-if-error` of a day approved. (Proven through the CDN on staging, 26 October 2026: D-5 passed 10/10 once the cache rules were in place; largest Age seen 54 s for /shop and 21 s for /api/products; private paths and session requests never cached.)
 - Q7 Logo and icons cached for 1 day (PE3 accepted).
-- Q8 Policy texts are reviewed by the owner; the launch gate stays.
+- Q8 Policy texts are reviewed by the owner; the launch gate stays. **Done 26 October 2026:** the owner approved the four texts (migration 0011).
 - Q9 Customer personal data kept 6 months, then excised (section 3.2 notes).
 - Q10 The frontend server is a separate service serving the ClojureScript/Replicant app.
+
+Resolved (owner, 26 October 2026, architecture-review.md 11a):
+- DA1 to DA10 approved (section 13), including DA10: the staff help text, owner-only topics included, is readable in the public JavaScript bundle.
+- Phone navigation: keep the horizontally scrolling category strip (DA6); qa re-checked and the conditions are met.
+- About photo: keep the CC0 stock photo for now; **still open as a launch item:** the owner replaces it with an own photo before launch.
+- Staging mail: until the app password exists, staging sends to a local mail sink (deploy/DECISIONS.md, 26 October 2026). **Open:** switching to Gmail when the owner supplies the app password.
+- Hosting: a 4 GB host for staging only; production server chosen at go-live (deploy/DECISIONS.md decision 1).
+
+Open:
+- O1 Declare `ring/ring-core` in `deps.edn` (backend-clojure, H4); a code change, not an owner choice, listed so it is not forgotten.
+- O2 Resolved 26 October 2026: D-5 passed 10/10 on staging through Cloudflare Free with the two cache rules; the short `s-maxage` values are honoured (largest Age 54 s), so the 2-hour minimum-TTL risk did not materialise. Re-run D-5 on production after go-live.
+- O3 Firewall to the CDN's ranges (section 8, requirement 5): recommended by deployment-engineer; the decision to apply it before go-live is the owner's.
+- O4 Pedestal versions differ between `deps.edn` (0.8.2) and `ssr/deps.edn` (0.8.1); align them (not checked by B19; frontend-cljs and backend-clojure).
 
 design-spec.md questions Q1 to Q15 are answered too (design-spec.md section 10, business-context.md "Owner decisions").
 
@@ -520,17 +595,17 @@ design-spec.md questions Q1 to Q15 are answered too (design-spec.md section 10, 
 ## 10. Research notes and sources
 
 - Pedestal routing (backend) and Reitit (frontend only); the reitit-pedestal link records why Reitit was not used on the backend: [Pedestal 0.8.0 release](https://clojureverse.org/t/pedestal-0-8-0-released/14736), [Pedestal 0.8 routing guide](https://pedestal.io/pedestal/0.8/reference/routing-quick-reference.html), [reitit-pedestal doc 0.9.1](https://cljdoc.org/d/metosin/reitit/0.9.1/doc/http/pedestal), [pedestal.service versions](https://cljdoc.org/versions/io.pedestal/pedestal.service).
-- Replicant: `replicant.string/render` renders on the JVM; current coordinate `no.cjohansen/replicant {:mvn/version "2026.07.1"}`; the README does not describe hydration. [Replicant on GitHub](https://github.com/cjohansen/replicant).
+- Replicant: `replicant.string/render` renders on the JVM; current coordinate `no.cjohansen/replicant {:mvn/version "2026.07.1"}`; the README does not describe hydration. [Replicant on GitHub](https://github.com/cjohansen/replicant). Verified in the Replicant source (architecture-review.md): `replicant.dom/render` clears the container on its first render, so there is no takeover of server markup (DA7).
 - Datomic: [peer-to-transactor connection and multiple peers](https://docs.datomic.com/operation/deployment.html), [dev storage and remote peers](https://docs.datomic.com/operation/storage.html).
 - Gmail SMTP: [Nylas Gmail SMTP settings](https://developer.nylas.com/docs/cookbook/email/gmail-smtp-settings/), [serversmtp Gmail limits 2026](https://serversmtp.com/limits-of-gmail-smtp-server/).
-- Hosting, domain, CDN and backup-storage research moved to deployment-handover.md (non-binding).
-- Not verified: Datomic's minimum transactor heap, whether Replicant's DOM renderer takes over server markup, the mulog JSON publisher option, and whether libvips' WebP save strips metadata with the exact option I assume. Each has a measurement or a test above.
+- Hosting, domain, CDN and backup-storage research moved to deployment-handover.md (non-binding); measurements and fixes found on the staging host are in deploy/DECISIONS.md.
+- Verified since the first design: the WebP strip option (`[Q=80,strip]`, B17 test), Replicant's re-render behaviour (above), the transactor on the small layout (deploy/DECISIONS.md measurements). Still not verified: Datomic's minimum transactor heap below 512m, and the CDN's minimum edge TTL.
 
 ---
 
 ## 11. Changes made to api-contract.md
 
-All made in place.
+All made in place. (Changes made later during review are in architecture-review.md section 13, CC1 to CC7.)
 - C1 (1.1): the single-origin routing is now stated as decided, with the routing rule (`/api/*` and `/media/*` to the backend; every other path, including `/static/*`, `/healthz`, `robots.txt`, `sitemap.xml`, to the frontend server); removed the sentence offering separate origins; stated that the browser calls relative `/api/...` URLs, that `API_BASE_URL` is a runtime value read only by the frontend server, and that no build-time API URL exists.
 - C2 (1.1): client IP for rate limiting comes from the header named by `CLIENT_IP_HEADER`, set by the edge after verification (clients cannot supply it); replaces "the edge's `X-Forwarded-For`".
 - C3 (1.4, 1.5, 11, 12): the backend health endpoint is now `GET /api/healthz`. The old `GET /healthz` collided with the frontend server's own `/healthz` (section 12) once routing is by path.
@@ -541,13 +616,33 @@ All made in place.
 - C8 (9a): mail is sent by exactly one instance per message (outbox claim); added the Gmail-specific daily cap behaviour (`MAIL_DAILY_CAP`, remaining messages stay pending) and that password-reset mail is also sent from the owner address.
 - C9 (12): static paths are `/static/...` (visual-guide.md section 11); added `stale-if-error` to the SSR page cache note; stated that the frontend server calls the backend's internal URL and not the CDN; added the launch gate (the frontend server refuses to start indexable while any policy is a placeholder); `/healthz` described as the frontend server's own.
 
-Checked and left unchanged: naming (camelCase, resource nouns, `/api` prefix), error shape and codes, idempotency table and scoping (works across instances because keys are in the database), pagination, money, id types, photo upload, policy documents, order and stock flows. They are consistent with this design.
+Checked and left unchanged: naming (camelCase, resource nouns, `/api` prefix), error shape and codes, idempotency table and scoping (works across instances because keys are in the database), pagination, money, id types, photo upload, policy documents, order and stock flows. They are consistent with this design. (Later, the contract's idempotency text was changed to the stored-response design by CC4, and the picture and import endpoints by CC5 and CC6; the design text above now matches.)
 
 ## 12. Proposed exceptions (for owner approval)
 Nothing departs from a non-negotiable rule.
-- PE1. Source layout: `src/backend/zandy/features/<slice>/`, a separate `ssr/` project, `src/frontend`, `src/shared` instead of `src/features/<slice>/` (guideline; reason in D9).
-- PE2. `error.details` on three error codes (guideline; D8).
-- PE3. Logo, icons and badges cached for one day instead of the one-year immutable lifetime suggested in visual-guide.md section 11, because the names are not versioned and the logo is due to be replaced.
-- PE4. Confirmed by the owner (Q10): the frontend server is a separate JVM Clojure service with Pedestal and no Datomic.
-- PE5. Partial exception to owner decision 2: backend instances can share photos only on the same host (`MediaStore` `local`). Running a backend on a second host requires the `s3` implementation and an object-storage account (Q5). Reason: an object store needs a payment card and extra code that no stated requirement needs at launch.
+- PE1. Source layout: `src/backend/zandy/features/<slice>/`, a separate `ssr/` project, `src/frontend`, `src/shared` instead of `src/features/<slice>/` (guideline; reason in D9). Status: built and reviewed in this form; no objection recorded by the owner.
+- PE2. `error.details` on three error codes (guideline; D8). Status: as PE1.
+- PE3. Logo, icons and badges cached for one day instead of the one-year immutable lifetime suggested in visual-guide.md section 11, because the names are not versioned and the logo is due to be replaced. **Accepted, owner, 25 October 2026 (Q7).**
+- PE4. Confirmed by the owner (Q10): the frontend server is a separate JVM Clojure service with Pedestal and no Datomic. **Resolved.**
+- PE5. Partial exception to owner decision 2: backend instances can share photos only on the same host (`MediaStore` `local`). Running a backend on a second host requires the `s3` implementation and an object-storage account (Q5). Reason: an object store needs a payment card and extra code that no stated requirement needs at launch. **Accepted, owner, 25 October 2026 (Q5).** The owner has since chosen a card-paid setup (deploy/DECISIONS.md decision 5), so the card reason no longer holds; the code reason does. Revisit only when a second backend host is wanted.
+- PE6. (new) Deviations from the design text that the owner approved on 26 October 2026 as DA1 to DA10 (section 13): libraries (jsonista and a hand-written logger instead of muuntaja and mulog), stored-response idempotency with a documented crash window, the extra module edges, pictures as components of products, the browser re-render, the scrolling category strip, the help build wording, public help text and the lead's one-off edits. None touches a non-negotiable rule. **Resolved (approved, architecture-review.md 11a).**
+- PE7. (new) Transactor heap `-Xmx512m` instead of the D3 design value 1024m on the small layout, with the other D3 adjustments (section 8, requirement 2): measured on the real staging host, recorded as D3 allows. **Accepted for staging by the owner's staging decision (deploy/DECISIONS.md, 26 October 2026);** production sizing is decided at go-live from a new measurement.
 - Not exceptions but vendor guidance: Datomic dev storage in production (accepted by the owner); a single transactor remains a single point of failure.
+
+## 13. Design amendments merged (DA1 to DA10)
+
+Source: architecture-review.md section 11 (text) and 11a (owner approval, 26 October 2026). Each is merged into the body at the place named.
+- DA1 Libraries: jsonista and a hand-written JSON logger instead of muuntaja and mulog; D11 lists jsonista, `data.csv`, ring-core (multipart), logback (backend), slf4j-nop (`ssr`). Merged in 2.2 (`platform.json`, `platform.log`, `platform.http`), D6 item 2, D11.
+- DA2 Idempotency: stored response, claim by transaction function, `place-order` also carries a unique `:order/idempotency-key`, with the crash window recorded. Merged in 2.2 (`platform.idempotency`), 3.2 (`idempotency` entity, B4 exception text), section 5 (Idempotency), N5.
+- DA3 Backend edges: platform `util` and `validation`; `accounts -> platform.rate-limit`; `orders -> site.api`; `catalog` uses the whole `platform.media` pipeline; `ctx :user-summaries`; `seed`; `platform.log -> json`; policy attributes written only by `platform.migrations`. Merged in 2.2 and its dependency list (identical to `backend_deps.clj`), B4.
+- DA4 Data model: `:product-image/photo` is a component (migration 0010); a photo exists only as part of a product's image. Merged in 2.2 (`catalog`), 3.2, 3.3.
+- DA5 Frontend edges: `shared.pages`, `shared.json`, `frontend.admin.state`, `.widgets`, `.help`, `.help-data`; `frontend.api -> shared.routes`; `frontend.effects -> shared.json, shared.seo`; `frontend.admin.state -> frontend.state`. Merged in 2.4 and its dependency list (identical to `frontend_deps.clj`).
+- DA6 Category navigation on phones is a horizontally scrollable strip, with the accessibility conditions (met after fixes). Merged in 2.4. design-spec.md still has to be amended by ux-designer.
+- DA7 Browser start-up re-renders over `#app`; proposed check B25 approved. Merged in 2.4, 2.5, section 7.2.
+- DA8 Build text: `build.sh` regenerates the help data; staleness is detected by `help.clj --check` run before the build and by `help_build_test`. Merged in 4.2.
+- DA9 Ownership record of the lead's one-off edits. Merged in 4.1.
+- DA10 Help text is public in the bundle; role filtering is a UI convenience. Merged in 2.4 ("Help text is public").
+
+Code-guide points merged (CODE-GUIDE.md section 8 items 6 to 14): migration format (3.3), `/media` route (2.2, 3.4, section 5), `::jobs` (2.2), manifest read per request (2.3, 4.2), `build.sh` and `--check` (4.2), test namespace names (7.2, B9), `dev/user.clj` classpath (4.1), honeypot (2.2, section 5), seed and bootstrap contexts and the `(Date.)` clock (2.2).
+
+Still-valid recommended code changes (not design changes; owners are backend-clojure or frontend-cljs, see architecture-review.md sections 9 and 10): H1 one `scoped-key` function in `platform.idempotency`; H2 log exception class instead of message; H3 start-up diagnostics (log `:startup-failed`, exit 1, check vips in the prod profile, warn when no owner exists); H4 declare `ring/ring-core` (O1); H5 idempotency hardening; H6 `help.clj --check` before the build; `System/exit` in each one-shot `-main` (E1); `ssr/system.clj` `-main` should block.

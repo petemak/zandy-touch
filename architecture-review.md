@@ -226,7 +226,7 @@ Bug or unclear message? An unclear start-up, not a logic bug. Changes (backend-c
 
 Code changes recommended, none blocking qa:
 - H1 `orders/routes.clj` lines 102 and 133 rebuild the idempotency scope string that `http.clj` line 173 builds. If the formats ever differ, the replay lookup silently stops working. Expose one `scoped-key` function in `platform.idempotency` (backend-clojure).
-- H2 `log.clj` `exception-data` logs the exception message, which for Datomic unique conflicts and some db-function failures can include values such as an email. Log the class and the ex-data keys, not the message, or scrub the message (backend-clojure; B12 intent).
+- H2 `log.clj` `exception-data` logs the exception message, which for Datomic unique conflicts and some db-function failures can include values such as an email. Log the class and ex-data keys, not the message, or scrub the message (backend-clojure; B12 intent).
 - H3 start-up diagnostics, section 9.
 - H4 declare `ring/ring-core` (used directly in `http.clj`) and name `org.clojure/data.csv` in D11 (backend-clojure, architect for D11).
 - H5 hardening for idempotency crash window, 4.1 item 2.
@@ -274,3 +274,7 @@ qa must run what I could not: the whole of `clojure -M:test`, `cd ssr && clojure
   - Import: `line` is the spreadsheet row (heading is row 1, blank rows skipped but counted, quoted line breaks are one row); dry-run `productId` null for would-create; per-row codes `required`, `invalid`, `unknownCategory`, `duplicateSku`, `extraCell`, and failure codes when applying; warnings carry only `field` and `code`, `ignoredForExisting`; whole-file codes `required`, `invalid` (more than one file), `notUtf8`, `invalidCsv`, `missingColumn`, `unknownColumn`, `duplicateColumn`, `tooManyRows`, and 413 `fileTooLarge`; the dry run and the real import need different `Idempotency-Key` values (same key gives 409 `idempotencyKeyReused` because the query is in the fingerprint); how the admin page finds the imported drafts.
   - Bulk publication: archived ids are restored (stay archived and rejected when the rule fails), `notFound` for an unknown id with `field: "productId"`, error entries carry `message`, results in request order.
 - CC7 (11): the photo library endpoints are recorded as removed.
+
+## 14. Amendments merged into architecture.md (27 October 2026)
+
+The approved amendments DA1 to DA10 (section 11, approved in 11a), the nine code-versus-design points of CODE-GUIDE.md section 8 (items 6 to 14), the changes since the design and the deployment boundary of deploy/DECISIONS.md are merged into architecture.md; its "Revision history" and section 13 give the details. This review is not rewritten to match: the sections above remain the record of the review as made at commit 1a3b47d. Where the text above says "design text is out of date" (sections 1, 2, 3, 4.1 to 4.2, 6), architecture.md now carries the corrected text. Open items that remain are listed in architecture.md section 9 (O1 to O4) and the recommended code changes H1 to H6 in its section 13.
