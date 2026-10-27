@@ -110,3 +110,6 @@ After fixes by frontend-cljs (strip, cart notice, empty-cart redirect, shared re
 
 Suites at re-check: frontend server 54 tests, browser 76 tests (0 warnings), frontend dependency checks, help `--check`, clj-kondo, backend 69 tests, full build: all pass.
 
+## Staging sign-off
+
+The owner signed off staging for production on 27 October 2026, after reviewing the shop and the admin, including product catalogue management and picture upload.
